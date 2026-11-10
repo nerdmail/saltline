@@ -59,12 +59,14 @@
   const REFENS = [[-10, -22], [-7, -22.6], [-4, -22]];
   // quem são os reféns, na ordem das posições acima: cor da roupa, cabelo, tamanho e ritmo de caminhada
   const CIVIS = [
-    { quem: "mulher",  cor: 0xb04a6a, cabelo: 0x3a2418, cabeloLongo: true,  escala: 0.95, vel: 1 },
-    { quem: "criança", cor: 0xf2c94c, cabelo: 0x2b1d14, cabeloLongo: false, escala: 0.7,  vel: 0.9 },
-    { quem: "idoso",   cor: 0x7d8a96, cabelo: 0xd8d8d8, cabeloLongo: false, escala: 0.92, vel: 0.75 },
+    { quem: "mulher",  camisa: 0x8c2f4f, calca: 0x232b3a, cabelo: 0x2e1a10, pele: 0xc08a68, cabeloLongo: true, escala: 0.95, vel: 1 },
+    { quem: "criança", camisa: 0xc79a1e, calca: 0x2f4f7a, cabelo: 0x23160e, pele: 0xc69472, bermuda: true, mangaCurta: true, escala: 0.7, vel: 0.9 },
+    { quem: "idoso",   camisa: 0x4d5a66, calca: 0x38332d, cabelo: 0xc9c9c9, pele: 0xb88768, curvado: true, bigode: true, escala: 0.92, vel: 0.75 },
   ];
   // pontos de resgate: um é sorteado a cada rodada e só os Policiais ficam sabendo qual
-  const RESGATES = [[-32, 6], [-32, 20], [-32, -8], [-26.6, -15], [-16, 22], [-7.8, 21.4], [6, 26], [14.2, 16.4], [-19, -1.4], [-10.3, 12.5]];
+  // [x, z, nome que aparece no painel da sala dos reféns]. No mapa, norte é -z e oeste é -x.
+  const RESGATES = [[-32, 6, "Portão oeste"], [-32, 20, "Portão sudoeste"], [-32, -8, "Portão noroeste"], [-26.6, -15, "Guarita noroeste"],
+    [-16, 22, "Pátio sudoeste"], [-7.8, 21.4, "Pátio sul"], [6, 26, "Cerca sul"], [14.2, 16.4, "Pátio sudeste"], [-19, -1.4, "Entrada do pátio"], [-10.3, 12.5, "Centro do pátio"]];
   const RAIO_RESGATE = 4;
   const PASSAGENS = [            // saídas secretas: entrou em "de", sai sempre em "para"
     { de: [-13.5, -22], para: [-16, 26] },
@@ -91,11 +93,16 @@
   // faca: silenciosa (ninguém ouve seus passos); pelas costas mata, pela frente só fere
   const FACA = { alcance: 1.9, danoFrente: 35, danoCostas: 500, espera: 0.6 };
   const DANO_CHUMBO = 13;      // cada bago da 12 (ela solta vários de uma vez, mas só alcança de perto)
+  // roupas dos jogadores: farda, colete, faixa na cor do time (para reconhecer de longe) e o que vai na cabeça
+  const ROUPAS = {
+    p: { camisa: 0x1c2a44, calca: 0x161d2c, colete: 0x0e1218, faixa: 0x4aa3ff, pele: 0xb98a6b, cabeca: "capacete" },
+    t: { camisa: 0x34352a, calca: 0x23241d, colete: 0x2a2118, faixa: 0xff5a40, pele: 0xb98a6b, cabeca: "balaclava" },
+  };
   const CHAVE_PERFIL = "saltline.perfil.v1";
   const ESTADOS = ["preso", "seguindo", "salvo", "morto"];
 
   /* ------------------------------------------------------------------- estado */
-  let G = null, V3 = null, solo = null, satOriginal = 1, cenario = null, rotuloHud = null, discoResgate = null;
+  let G = null, V3 = null, solo = null, satOriginal = 1, cenario = null, rotuloHud = null, discoResgate = null, painel = null;
   const mp = {
     ativo: false, anfitriao: false, codigo: null, meuId: null, peer: null, conAnfitriao: null,
     cons: new Map(),          // anfitrião: id -> conexão
@@ -329,8 +336,9 @@
         break;
       case "tiro": tiroRemoto(m); break;
       case "resgate":
-        mp.resgateVisto = new V3(m.p[0], 0, m.p[1]); mp.assinatura = "";
+        mp.resgateVisto = new V3(m.p[0], 0, m.p[1]); mp.resgateNome = m.nome; mp.assinatura = "";
         discoResgate.position.copy(mp.resgateVisto); discoResgate.visible = true;
+        desenharPainel(m.p, m.nome);
         break;
       case "dano":
         if (emRodada() && G.player.alive) {
@@ -371,16 +379,16 @@
       case "item": {
         const it = mp.itens.get(m.id);
         if (!it) break;
-        explosivos.remove(it.malha); mp.itens.delete(m.id);
+        explosivos.remove(it.malha); explosivos.remove(it.anel); mp.itens.delete(m.id);
         if (m.por === mp.meuId) { mp.bolsa[it.tipo]++; tocar("reload_magin"); G.hud.message("Pegou: " + NOMES_ITEM[it.tipo], 2); }
         break;
       }
       case "granada":
-        mp.granadas.push({ pos: new V3().fromArray(m.o), vel: new V3().fromArray(m.v), t: CFG.granada.pavio, por: m.por, malha: caixa(CORES_ITEM.granada, 0.14) });
+        mp.granadas.push({ pos: new V3().fromArray(m.o), vel: new V3().fromArray(m.v), t: CFG.granada.pavio, por: m.por, malha: modeloExplosivo("granada", 1.3) });
         break;
       case "bomba": {
-        const b = { id: m.id, tipo: m.tipo, pos: new V3().fromArray(m.p), t: m.tempo, por: m.por, malha: caixa(CORES_ITEM[m.tipo], 0.34), bipe: 0 };
-        b.malha.position.copy(b.pos).setY(b.pos.y + 0.17);
+        const b = { id: m.id, tipo: m.tipo, pos: new V3().fromArray(m.p), t: m.tempo, por: m.por, malha: modeloExplosivo(m.tipo, 1.7), bipe: 0 };
+        b.malha.position.copy(b.pos).setY(b.pos.y + 0.07);
         mp.bombas.set(m.id, b);
         G.hud.warn(eu() && eu().time === "t" ? "Bomba armada" : "Bomba armada no mapa", 2.5); tocar("alert");
         break;
@@ -570,7 +578,7 @@
     mandarLobby();
     const r = RESGATES[Math.floor(Math.random() * RESGATES.length)], q = pisavel(r[0], r[1]);
     mp.resgate = new V3(q[0], 0, q[1]);
-    for (const j of mp.jogadores.values()) if (j.time === "p") paraUm(j.id, { t: "resgate", p: q });   // só os Policiais ficam sabendo
+    for (const j of mp.jogadores.values()) if (j.time === "p") paraUm(j.id, { t: "resgate", p: q, nome: r[2] });   // só os Policiais ficam sabendo
     for (const tipo of ["gull", "hound"]) for (let k = 0; k < dif().patrulha[tipo]; k++) soltarMaquina(tipo, false);
   }
   function fimDaRodada(vencedor, motivo) {
@@ -602,14 +610,15 @@
   function comecarRodadaLocal(m) {
     mp.fase = "preparo"; mp.preparoT = CFG.tempoPreparo; mp.rodada = m.n; mp.placar = m.placar; mp.dificuldade = m.dificuldade; mp.tempo = dif().tempo;
     mp.pegando = -1; mp.pegarT = 0; mp.passagemT = 0; mp.ultimoDano = null; mp.resultado = null; mp.assinatura = "";
-    mp.resgateVisto = null; discoResgate.visible = false;
+    mp.resgateVisto = null; discoResgate.visible = false; painel.visible = false;
     fecharOverlay(); esconderMenuSolo();
     if (!mp.anfitriao) { try { G.enemies.clear(); } catch {} mp.marionetes.clear(); }
     zerarRefens(); limparExplosivos(); limparArmas();
     for (const d of m.armas || []) porArmaNoChao(d);
     for (const d of m.itens || []) {
-      const it = { id: d[0], tipo: d[1], pos: new V3(d[2], 0, d[3]), malha: caixa(CORES_ITEM[d[1]], 0.26), pedido: false };
-      it.malha.position.set(d[2], 0.35, d[3]); mp.itens.set(it.id, it);
+      const it = { id: d[0], tipo: d[1], pos: new V3(d[2], 0, d[3]), malha: modeloExplosivo(d[1], 2.2), pedido: false };
+      it.malha.position.set(d[2], 0.45, d[3]); mp.itens.set(it.id, it);
+      it.anel = comAnel(it.malha, CORES_ITEM[d[1]]); it.anel.position.set(d[2], 0.04, d[3]); explosivos.add(it.anel);
     }
     for (const j of mp.jogadores.values()) { j.vivo = !!m.nasc[j.id]; if (m.nasc[j.id] && j.id !== mp.meuId) { j.pos.set(m.nasc[j.id][0], 0, m.nasc[j.id][2]); j.cur.copy(j.pos); } }
     const meu = m.nasc[mp.meuId], p = G.player, post = G.render.post || {};
@@ -651,10 +660,10 @@
   }
   // objetivo, contador e marcadores do HUD; refaz só quando a situação dos reféns muda
   function atualizarObjetivo() {
-    const t = eu() && eu().time, sig = t + mp.refens.map(r => r.estado).join("");
+    const t = eu() && eu().time, sig = t + mp.refens.map(r => r.estado).join("") + (mp.resgateVisto ? mp.resgateNome : "");
     if (sig === mp.assinatura) return;
     mp.assinatura = sig;
-    G.hud.setObjective(t ? TIMES[t].objetivo : "Aguarde a próxima rodada");
+    G.hud.setObjective(!t ? "Aguarde a próxima rodada" : mp.resgateVisto ? "Leve os reféns: " + mp.resgateNome : TIMES[t].objetivo);
     G.hud.setRelays(mp.refens.filter(r => r.estado === 2).length, mp.refens.length);
     const marcas = mp.refens.filter(r => r.estado < 2).map(r => ({ id: "refem" + r.i, short: "R" + (r.i + 1), label: "Refém", pos: r.cur, kind: "relay" }));
     if (mp.resgateVisto) marcas.push({ id: "resgate", short: "EX", label: "Resgate", pos: mp.resgateVisto, kind: "extract" });
@@ -668,39 +677,63 @@
       damage(q, de) { if (mp.fase === "valendo" && j.vivo) paraUm(j.id, { t: "dano", q, de: de ? arr(de) : null, por: null }); },
       heal() {}, addShake() {}, addRecoil() {} };
   }
-  function criarBoneco({ nome, cor, css, armado, civil }) {
-    const T = G.THREE, grupo = new T.Group(), corpo = new T.Group();
-    const escuro = new T.MeshStandardMaterial({ color: armado ? 0x23282c : 0x6b7075, roughness: 0.85, metalness: 0.1 });
-    const mcor = new T.MeshStandardMaterial({ color: cor, roughness: 0.7, metalness: 0.05, emissive: cor, emissiveIntensity: 0.35 });
-    const pele = new T.MeshStandardMaterial({ color: 0x8d7b6a, roughness: 0.9 });
-    const peca = (pai, geo, mat, x, y, z) => { const m = new T.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; pai.add(m); return m; };
-    peca(corpo, new T.BoxGeometry(0.17, 0.82, 0.2), escuro, -0.11, 0.41, 0);
-    peca(corpo, new T.BoxGeometry(0.17, 0.82, 0.2), escuro, 0.11, 0.41, 0);
-    peca(corpo, new T.BoxGeometry(0.46, 0.6, 0.26), escuro, 0, 1.12, 0);
-    peca(corpo, new T.BoxGeometry(0.48, 0.3, 0.28), mcor, 0, 1.2, 0);          // colete na cor do time
-    peca(corpo, new T.SphereGeometry(0.13, 12, 10), pele, 0, 1.58, 0);
-    const bracos = new T.Group(); bracos.position.set(0, 1.32, 0); corpo.add(bracos);
-    if (armado) {
-      peca(corpo, new T.BoxGeometry(0.28, 0.1, 0.28), mcor, 0, 1.68, 0);       // capacete
-      peca(bracos, new T.BoxGeometry(0.11, 0.11, 0.5), escuro, -0.2, -0.05, -0.25).rotation.y = -0.25;
-      peca(bracos, new T.BoxGeometry(0.11, 0.11, 0.5), escuro, 0.2, -0.05, -0.25).rotation.y = 0.25;
-      peca(bracos, new T.BoxGeometry(0.06, 0.12, 0.7), new T.MeshStandardMaterial({ color: 0x0e1012, roughness: 0.5, metalness: 0.6 }), 0.05, -0.02, -0.55);
-    } else {                                                                    // refém: mãos amarradas à frente
-      peca(bracos, new T.BoxGeometry(0.1, 0.5, 0.1), escuro, -0.24, -0.25, -0.06);
-      peca(bracos, new T.BoxGeometry(0.1, 0.5, 0.1), escuro, 0.24, -0.25, -0.06);
-      const cabelo = new T.MeshStandardMaterial({ color: civil.cabelo, roughness: 0.95 });
-      peca(corpo, new T.BoxGeometry(0.3, 0.1, 0.3), cabelo, 0, 1.69, 0);
-      if (civil.cabeloLongo) peca(corpo, new T.BoxGeometry(0.3, 0.42, 0.1), cabelo, 0, 1.5, 0.13);
-      grupo.scale.setScalar(civil.escala);
-      var arma = peca(bracos, new T.BoxGeometry(0.06, 0.1, 0.34), new T.MeshStandardMaterial({ color: 0x0e1012, roughness: 0.5, metalness: 0.6 }), 0, -0.45, -0.22);
-      arma.visible = false;
+  // Monta uma pessoa: pernas com joelho, tronco que inclina no quadril, braços com cotovelo, cabeça com rosto.
+  // Medidas em metros, de frente para -z. Jogadores (armado) levam colete, faixa do time e fuzil; reféns (civil), roupa comum.
+  function criarBoneco({ nome, css, armado, civil, time }) {
+    const T = G.THREE, grupo = new T.Group(), corpo = new T.Group(), tronco = new T.Group(), r = civil || ROUPAS[time];
+    const mat = (hex, brilho) => new T.MeshStandardMaterial({ color: hex, roughness: 0.9, metalness: 0, ...(brilho ? { emissive: hex, emissiveIntensity: 0.6 } : {}) });
+    const mCamisa = mat(r.camisa), mCalca = mat(r.calca), mPele = mat(r.pele), mEscuro = mat(0x111315), mCabelo = mat(r.cabelo || 0x111315);
+    const add = (pai, geo, m, x, y, z) => { const o = new T.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; pai.add(o); return o; };
+    const capsula = (raio, comp) => new T.CapsuleGeometry(raio, comp, 4, 10);
+    const perna = x => {
+      const coxa = new T.Group(); coxa.position.set(x, 0.92, 0); corpo.add(coxa);
+      add(coxa, capsula(0.078, 0.3), mCalca, 0, -0.22, 0);
+      const canela = new T.Group(); canela.position.y = -0.45; coxa.add(canela);
+      add(canela, capsula(0.06, 0.3), r.bermuda ? mPele : mCalca, 0, -0.2, 0);
+      add(canela, new T.BoxGeometry(0.1, 0.07, 0.25), mEscuro, 0, -0.43, -0.045);            // sapato
+      return { coxa, canela };
+    };
+    const pernas = [perna(-0.095), perna(0.095)];
+    tronco.position.y = 0.92; corpo.add(tronco);
+    add(tronco, new T.BoxGeometry(0.3, 0.16, 0.18), mCalca, 0, 0.06, 0);                    // quadril
+    add(tronco, capsula(0.14, 0.2), mCamisa, 0, 0.34, 0).scale.set(1.2, 1, 0.8);            // peito
+    add(tronco, new T.CylinderGeometry(0.045, 0.05, 0.09, 10), mPele, 0, 0.61, 0);          // pescoço
+    const cabeca = new T.Group(); cabeca.position.y = 0.73; tronco.add(cabeca);
+    const balaclava = r.cabeca === "balaclava";
+    add(cabeca, new T.SphereGeometry(0.105, 16, 12), balaclava ? mEscuro : mPele, 0, 0, 0).scale.set(0.92, 1.12, 1);
+    if (balaclava) add(cabeca, new T.BoxGeometry(0.15, 0.036, 0.03), mPele, 0, 0.014, -0.088);   // só os olhos de fora
+    for (const x of [-0.036, 0.036]) add(cabeca, new T.SphereGeometry(0.013, 6, 6), mEscuro, x, 0.014, -0.1);
+    if (r.cabeca === "capacete") add(cabeca, new T.SphereGeometry(0.122, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), mat(0x141b29), 0, 0.02, 0);
+    if (civil) {
+      add(cabeca, new T.SphereGeometry(0.112, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), mCabelo, 0, 0.022, 0.012).scale.set(0.96, 1.1, 1.04);
+      if (r.cabeloLongo) add(cabeca, capsula(0.075, 0.2), mCabelo, 0, -0.1, 0.07).scale.set(1.25, 1, 0.7);
+      if (r.bigode) add(cabeca, new T.BoxGeometry(0.07, 0.014, 0.02), mCabelo, 0, -0.045, -0.1);
     }
+    if (armado) {
+      add(tronco, new T.BoxGeometry(0.37, 0.3, 0.25), mat(r.colete), 0, 0.35, 0);           // colete
+    }
+    const braco = x => {
+      const ombro = new T.Group(); ombro.position.set(x, 0.5, 0); tronco.add(ombro);
+      add(ombro, capsula(0.05, 0.2), mCamisa, 0, -0.14, 0);
+      if (armado) add(ombro, new T.BoxGeometry(0.115, 0.05, 0.115), mat(r.faixa, true), 0, -0.12, 0);   // faixa do time
+      const ante = new T.Group(); ante.position.y = -0.29; ombro.add(ante);
+      add(ante, capsula(0.042, 0.19), r.mangaCurta ? mPele : mCamisa, 0, -0.13, 0);
+      add(ante, new T.SphereGeometry(0.048, 8, 8), mPele, 0, -0.27, 0);                      // mão
+      return { ombro, ante };
+    };
+    const bracos = [braco(-0.21), braco(0.21)];
+    // arma na mão direita: com o braço estendido, o lado "-y" do antebraço aponta para a frente
+    const arma = new T.Group(), mArma = new T.MeshStandardMaterial({ color: 0x0e1012, roughness: 0.5, metalness: 0.6 });
+    if (armado) { add(arma, new T.BoxGeometry(0.05, 0.6, 0.075), mArma, -0.04, -0.3, 0.02); add(arma, new T.BoxGeometry(0.035, 0.05, 0.16), mArma, -0.04, -0.16, 0.1); }
+    else { add(arma, new T.BoxGeometry(0.03, 0.17, 0.045), mArma, 0, -0.33, 0.01); arma.visible = false; }
+    bracos[1].ante.add(arma);
     grupo.add(corpo);
-    const placa = criarPlaca(nome, css); placa.position.y = 2.05; grupo.add(placa);
-    if (civil) placa.scale.multiplyScalar(1 / civil.escala);
+    let placa = null;
+    if (armado) { placa = criarPlaca(nome, css); placa.position.y = 2.05; grupo.add(placa); }
+    if (civil) grupo.scale.setScalar(civil.escala);
     grupo.visible = false;
     G.scene.add(grupo);
-    return { grupo, corpo, bracos, placa, arma };
+    return { grupo, corpo, tronco, pernas, bracos, placa, arma, curvado: !!r.curvado, ult: new V3(), andar: 0, fase: 0 };
   }
   function criarPlaca(texto, css, grande) {
     const T = G.THREE, cv = document.createElement("canvas"); cv.width = 256; cv.height = 64;
@@ -716,24 +749,43 @@
     j.boneco.grupo.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
     j.boneco = null;
   }
-  function posar(b, cur, yaw, k, vivo, agachado) {
+  // Coloca o boneco no lugar e anima: passada conforme o quanto andou, pose dos braços, agachado e caído.
+  // pose: "arma" (fuzil nas duas mãos), "preso" (mãos amarradas à frente) ou "pistola" (braço direito estendido).
+  function posar(b, cur, yaw, k, dt, o) {
+    const vel = dt > 0 ? Math.hypot(cur.x - b.ult.x, cur.z - b.ult.z) / dt : 0;
+    b.ult.copy(cur);
     b.grupo.position.copy(cur);
     let d = yaw - b.grupo.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
     b.grupo.rotation.y += d * k;
-    b.corpo.scale.y += ((agachado && vivo ? 0.68 : 1) - b.corpo.scale.y) * k;
-    b.corpo.rotation.x += ((vivo ? 0 : -Math.PI / 2) - b.corpo.rotation.x) * k;   // caído
-    b.corpo.position.y += ((vivo ? 0 : 0.18) - b.corpo.position.y) * k;
+    b.andar += ((o.vivo && vel > 0.4 ? Math.min(1, vel / 3) : 0) - b.andar) * k;
+    b.fase += Math.min(vel, 6) * dt * 2.6;
+    const s = Math.sin(b.fase) * b.andar, ir = (obj, eixo, alvo) => { obj.rotation[eixo] += (alvo - obj.rotation[eixo]) * k; };
+    b.pernas.forEach((p, i) => {
+      const lado = i ? -s : s;
+      ir(p.coxa, "x", o.vivo ? lado * 0.7 : 0); ir(p.canela, "x", o.vivo ? -Math.max(0, -lado) * 0.9 : 0);
+    });
+    const [esq, dir] = b.bracos;
+    let ex = 0, ez = 0, ea = 0, dx = 0, dz = 0, da = 0;                        // ombro x, ombro z, cotovelo
+    if (!o.vivo) { /* braços soltos */ }
+    else if (o.pose === "arma") { ex = dx = Math.PI / 2 + o.pitch * 0.9; ez = 0.42; dz = -0.1; }
+    else if (o.pose === "preso") { ex = dx = 0.35; ez = 0.3; dz = -0.3; ea = da = 0.9; }
+    else { dx = Math.PI / 2 - 0.08; dz = -0.1; ex = -s * 0.5; ea = 0.2; }
+    ir(esq.ombro, "x", ex); ir(esq.ombro, "z", ez); ir(esq.ante, "x", ea);
+    ir(dir.ombro, "x", dx); ir(dir.ombro, "z", dz); ir(dir.ante, "x", da);
+    ir(b.tronco, "x", o.vivo ? (b.curvado ? -0.22 : -0.04) - b.andar * 0.06 : 0);
+    b.corpo.scale.y += ((o.agachado && o.vivo ? 0.68 : 1) - b.corpo.scale.y) * k;
+    b.corpo.rotation.x += ((o.vivo ? 0 : -Math.PI / 2) - b.corpo.rotation.x) * k;   // caído
+    b.corpo.position.y += ((o.vivo ? 0 : 0.16) - b.corpo.position.y) * k;
   }
   function atualizarBonecos(dt) {
-    const meuTime = eu() && eu().time, k = 1 - Math.exp(-14 * dt);
+    const meuTime = eu() && eu().time, k = 1 - Math.exp(-18 * dt);
     for (const j of mp.jogadores.values()) {
       if (j.id === mp.meuId) continue;
       if (j.boneco && (j.boneco.time !== j.time || j.boneco.nome !== j.nome)) removerBoneco(j);
-      if (!j.boneco) { j.boneco = criarBoneco({ nome: j.nome, cor: TIMES[j.time].cor, css: TIMES[j.time].css, armado: true }); j.boneco.time = j.time; j.boneco.nome = j.nome; }
+      if (!j.boneco) { j.boneco = criarBoneco({ nome: j.nome, css: TIMES[j.time].css, armado: true, time: j.time }); j.boneco.time = j.time; j.boneco.nome = j.nome; }
       if (j.cur.distanceToSquared(j.pos) > 64) j.cur.copy(j.pos); else j.cur.lerp(j.pos, k);   // passagem secreta: aparece direto
       j.boneco.grupo.visible = j.pos.y > -40;
-      posar(j.boneco, j.cur, j.yaw, k, j.vivo, j.agachado);
-      j.boneco.bracos.rotation.x = j.vivo ? j.pitch : 0;
+      posar(j.boneco, j.cur, j.yaw, k, dt, { vivo: j.vivo, agachado: j.agachado, pitch: j.pitch, pose: "arma" });
       j.boneco.placa.visible = j.vivo && j.time === meuTime;
       const a = j.alvo;
       if (a) {
@@ -748,8 +800,7 @@
       const dx = r.cur.x - antes.x, dz = r.cur.z - antes.z;
       if (dx * dx + dz * dz > 1e-6) r.yaw = Math.atan2(-dx, -dz);
       r.boneco.grupo.visible = r.estado !== 2;
-      posar(r.boneco, r.cur, r.yaw || 0, k, r.estado !== 3, false);
-      r.boneco.placa.visible = r.estado < 2;
+      posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: false, pitch: 0, pose: r.estado === 1 ? "pistola" : "preso" });
       r.boneco.arma.visible = r.estado === 1;                 // solto pelo policial, já armado
     }
   }
@@ -933,6 +984,39 @@
     }
   }
 
+  // desenha o painel da sala dos reféns: mapa visto de cima (norte para cima), o galpão e um X no ponto de resgate
+  function desenharPainel(p, nome) {
+    const tex = painel.material.map, c = tex.image.getContext("2d"), L = 1024, A = 640;
+    const mx = x => 60 + (x + 40) / 80 * 560, mz = z => 150 + (z + 30) / 60 * 420;      // mapa: x -40..40, z -30..30
+    c.fillStyle = "#101820"; c.fillRect(0, 0, L, A);
+    c.strokeStyle = "#ffb347"; c.lineWidth = 8; c.strokeRect(10, 10, L - 20, A - 20);
+    c.fillStyle = "#ffb347"; c.font = '900 64px "Big Shoulders Display", Impact, sans-serif'; c.textBaseline = "top";
+    c.fillText("PONTO DE RESGATE", 56, 36);
+    c.fillStyle = "#1b2a36"; c.fillRect(mx(-40), mz(-30), 560, 420);                       // pátio
+    c.fillStyle = "#16405c"; c.fillRect(mx(30), mz(-30), mx(40) - mx(30), 420);            // mar
+    c.strokeStyle = "rgba(232,228,218,.35)"; c.lineWidth = 2; c.setLineDash([8, 8]);
+    for (const x of [-24, 16]) { c.beginPath(); c.moveTo(mx(x), mz(-30)); c.lineTo(mx(x), mz(30)); c.stroke(); }
+    c.setLineDash([]);
+    c.fillStyle = "#3a4650"; c.fillRect(mx(-16), mz(-28), mx(12) - mx(-16), mz(-11) - mz(-28));   // galpão
+    c.fillStyle = "#e8e4da"; c.font = '600 22px "Barlow Condensed", Arial, sans-serif';
+    c.fillText("GALPÃO · VOCÊ ESTÁ AQUI", mx(-16) + 8, mz(-28) + 8);
+    c.fillStyle = "rgba(232,228,218,.55)"; c.fillText("PORTÃO", mx(-39), mz(27) - 4); c.fillText("PÁTIO", mx(-6), mz(27) - 4); c.fillText("CAIS", mx(19), mz(27) - 4);
+    c.fillText("N", mx(-38), mz(-29)); c.fillText("▲", mx(-38) - 2, mz(-29) + 22);
+    const x = mx(p[0]), z = mz(p[1]);
+    c.strokeStyle = "#6fb6ff"; c.lineWidth = 5; c.setLineDash([14, 10]);                    // caminho sugerido, em linha reta
+    c.beginPath(); c.moveTo(mx(-2), mz(-19.5)); c.lineTo(x, z); c.stroke(); c.setLineDash([]);
+    c.strokeStyle = "#ff5a40"; c.lineWidth = 9; c.beginPath(); c.arc(x, z, 26, 0, 6.283); c.stroke();
+    c.beginPath(); c.moveTo(x - 15, z - 15); c.lineTo(x + 15, z + 15); c.moveTo(x + 15, z - 15); c.lineTo(x - 15, z + 15); c.stroke();
+    c.fillStyle = "#e8e4da"; c.font = '600 30px "Barlow Condensed", Arial, sans-serif'; c.fillText("LEVE OS REFÉNS PARA", 650, 170);
+    c.fillStyle = "#ff5a40"; c.font = '900 62px "Big Shoulders Display", Impact, sans-serif';
+    const palavras = String(nome || "").toUpperCase().split(" "); let linha = "", y = 214;
+    for (const w of palavras) { if (c.measureText(linha + w).width > 340 && linha) { c.fillText(linha, 650, y); y += 66; linha = ""; } linha += w + " "; }
+    c.fillText(linha, 650, y);
+    c.fillStyle = "rgba(232,228,218,.7)"; c.font = '400 22px "IBM Plex Mono", monospace';
+    ["X vermelho = resgate", "Marcador EX na bússola", "Segure E para soltar", "cada refém"].forEach((t, i) => c.fillText(t, 650, 420 + i * 30));
+    tex.needsUpdate = true; painel.visible = true;
+  }
+
   /* ------------------------------------------------------ reféns e passagens */
   // anfitrião: terrorista vivo com a mira apontada para perto do refém (para ele desviar)
   function inimigoMirando(r) {
@@ -1080,13 +1164,19 @@
     });
     discoResgate = new T.Group(); discoResgate.visible = false; cenario.add(discoResgate);
     disco(0, 0, RAIO_RESGATE, 0x4aa3ff, 0.3, discoResgate);
+    // painel na parede oeste da sala dos reféns: mapa do porto e o nome do ponto de resgate da rodada
+    const tela = document.createElement("canvas"); tela.width = 1024; tela.height = 640;
+    painel = new T.Mesh(new T.PlaneGeometry(4.6, 2.875), new T.MeshBasicMaterial({ map: new T.CanvasTexture(tela), toneMapped: false }));
+    painel.rotation.y = Math.PI / 2; painel.visible = false; cenario.add(painel);
+    let xParede = -15.8; try { const h = G.physics.raycast(new V3(-9, 3.4, -24.5), new V3(-1, 0, 0), 30); if (h && h.point) xParede = h.point.x; } catch {}
+    painel.position.set(xParede + 0.06, 3.4, -24.5);
     G.scene.add(cenario);
     explosivos = new T.Group(); explosivos.visible = false; G.scene.add(explosivos);
     armasGrupo = new T.Group(); armasGrupo.visible = false; G.scene.add(armasGrupo);
     nomeArmaOriginal = G.weapon.name;
     montarModelos();
     mp.refens = REFENS.map((_, i) => ({ i, pos: new V3(), cur: new V3(), vel: new V3(), estado: 0, lider: null, hp: 1, yaw: Math.PI / 2, casa: new V3(REFENS[i][0], 0, REFENS[i][1]),
-      civil: CIVIS[i % CIVIS.length], boneco: criarBoneco({ nome: "Refém", cor: CIVIS[i % CIVIS.length].cor, css: "#e8e4da", armado: false, civil: CIVIS[i % CIVIS.length] }) }));
+      civil: CIVIS[i % CIVIS.length], boneco: criarBoneco({ armado: false, civil: CIVIS[i % CIVIS.length] }) }));
     zerarRefens();
   }
 
@@ -1094,12 +1184,55 @@
   const NOMES_ITEM = { granada: "Granada", bomba: "Bomba", relogio: "Bomba-relógio" };
   const CORES_ITEM = { granada: 0x7bd88f, bomba: 0xff5a40, relogio: 0xffb347 };
   let explosivos = null, bolsaEl = null;
-  function caixa(cor, tam) {
-    const T = G.THREE, m = new T.Mesh(new T.BoxGeometry(tam, tam, tam), new T.MeshBasicMaterial({ color: cor }));
-    explosivos.add(m); return m;
+  // modelos: granada verde-oliva com alavanca e argola; bomba = banana de dinamite com detonador;
+  // bomba-relógio = maleta com mostrador. "led" pisca nas bombas armadas.
+  function modeloExplosivo(tipo, escala) {
+    const T = G.THREE, g = new T.Group();
+    const mat = (hex, rug = 0.7, met = 0.1) => new T.MeshStandardMaterial({ color: hex, roughness: rug, metalness: met });
+    const add = (geo, m, x, y, z) => { const o = new T.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; g.add(o); return o; };
+    const aco = mat(0x8c9299, 0.4, 0.8), preto = mat(0x15171a, 0.8, 0.2);
+    if (tipo === "granada") {
+      const oliva = mat(0x4b5a2a, 0.65, 0.2);
+      add(new T.SphereGeometry(0.06, 16, 12), oliva, 0, 0, 0).scale.y = 1.22;
+      for (const y of [-0.025, 0.025]) add(new T.TorusGeometry(0.059, 0.004, 6, 22), preto, 0, y, 0).rotation.x = Math.PI / 2;
+      add(new T.CylinderGeometry(0.02, 0.026, 0.035, 12), aco, 0, 0.086, 0);
+      add(new T.BoxGeometry(0.014, 0.1, 0.02), aco, 0.045, 0.045, 0).rotation.z = -0.35;        // alavanca
+      add(new T.TorusGeometry(0.02, 0.003, 6, 16), aco, -0.04, 0.1, 0);                          // argola
+    } else {
+      const led = add(new T.SphereGeometry(0.012, 8, 8), new T.MeshStandardMaterial({ color: 0xff2a1a, emissive: 0xff2a1a, emissiveIntensity: 2 }), 0, 0, 0);
+      g.userData.led = led;
+      if (tipo === "bomba") {
+        const vermelho = mat(0xa3211b, 0.75, 0);
+        for (const [y, z] of [[0, -0.024], [0, 0.024], [0.042, 0]]) { const b = add(new T.CylinderGeometry(0.023, 0.023, 0.22, 12), vermelho, 0, y, z); b.rotation.z = Math.PI / 2; }
+        for (const x of [-0.06, 0.06]) add(new T.BoxGeometry(0.016, 0.1, 0.105), preto, x, 0.018, 0);          // fita
+        add(new T.BoxGeometry(0.08, 0.03, 0.055), preto, 0, 0.08, 0);                                          // detonador
+        for (const [x, c] of [[-0.03, 0xd8b21c], [0.03, 0x2a6fd6]]) { const f = add(new T.TorusGeometry(0.03, 0.003, 6, 12, Math.PI), mat(c), x, 0.085, 0.02); f.rotation.y = Math.PI / 2; }
+        led.position.set(0.025, 0.1, 0);
+      } else {
+        add(new T.BoxGeometry(0.24, 0.07, 0.16), mat(0x2b2f33, 0.5, 0.6), 0, 0, 0);                             // maleta
+        add(new T.BoxGeometry(0.245, 0.006, 0.165), aco, 0, 0.012, 0);
+        add(new T.TorusGeometry(0.035, 0.006, 6, 12, Math.PI), preto, 0, 0, 0.08).rotation.x = Math.PI / 2;     // alça
+        add(new T.CylinderGeometry(0.045, 0.045, 0.01, 20), mat(0xe8e4da, 0.6, 0), -0.04, 0.04, 0);             // mostrador
+        add(new T.BoxGeometry(0.004, 0.004, 0.035), preto, -0.04, 0.047, -0.012);
+        add(new T.BoxGeometry(0.025, 0.004, 0.004), preto, -0.03, 0.047, 0);
+        led.position.set(0.07, 0.042, 0);
+      }
+    }
+    g.scale.setScalar(escala);
+    explosivos.add(g);
+    return g;
+  }
+  // item para pegar: flutua e gira sobre um anel no chão
+  function comAnel(modelo, cor) {
+    const T = G.THREE, anel = new T.Mesh(new T.RingGeometry(0.3, 0.38, 28), new T.MeshBasicMaterial({ color: cor, transparent: true, opacity: 0.75, side: T.DoubleSide, depthWrite: false }));
+    anel.rotation.x = -Math.PI / 2;
+    return anel;
   }
   function limparExplosivos() {
-    while (explosivos.children.length) { const m = explosivos.children[0]; explosivos.remove(m); m.geometry.dispose(); m.material.dispose(); }
+    while (explosivos.children.length) {
+      const m = explosivos.children[0]; explosivos.remove(m);
+      m.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+    }
     mp.itens.clear(); mp.bombas.clear(); mp.granadas.length = 0;
     mp.bolsa = { granada: 0, bomba: 0, relogio: 0 }; mp.desarmarT = 0;
   }
@@ -1157,11 +1290,11 @@
     }
     for (const b of mp.bombas.values()) {
       b.t -= dt; b.bipe -= dt;
-      b.malha.scale.setScalar(1 + 0.25 * Math.max(0, Math.sin(tempo * (b.t < 6 ? 16 : 6))));
+      b.malha.userData.led.material.emissiveIntensity = Math.sin(tempo * (b.t < 6 ? 16 : 6)) > 0 ? 4 : 0.15;     // LED pisca, mais rápido no fim
       if (b.bipe <= 0) { b.bipe = b.t < 6 ? 0.25 : 1; tocar("telegraph", { pos: b.pos, gain: 0.6 }); }
     }
     for (const it of mp.itens.values()) {
-      it.malha.rotation.y = tempo * 1.5; it.malha.position.y = 0.35 + Math.sin(tempo * 2 + it.id) * 0.06;
+      it.malha.rotation.y = tempo * 1.5; it.malha.position.y = 0.45 + Math.sin(tempo * 2 + it.id) * 0.05;
       if (j && j.time === "t" && p.alive && mp.fase === "valendo" && !it.pedido && Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z) < 1.3 && p.pos.y < 2) {
         it.pedido = true; enviar({ t: "pegueiItem", id: it.id });
       }
@@ -1203,18 +1336,27 @@
     }
     return lista;
   }
+  // a arma no chão é uma cópia do modelo do jogo com a variação dela (a faca, a lâmina), girando sobre um anel na cor do time
   function porArmaNoChao(d) {
-    const T = G.THREE, a = ARMAS[d[1]], g = new T.Group(); if (!a) return;
-    g.add(new T.Mesh(new T.BoxGeometry(a.faca ? 0.05 : 0.09, a.faca ? 0.05 : 0.14, a.faca ? 0.34 : 0.75), new T.MeshBasicMaterial({ color: TIMES[a.time].cor })));
-    const pl = criarPlaca(a.nome, TIMES[a.time].css); pl.position.y = 0.4; pl.scale.set(1.4, 0.35, 1); g.add(pl);
-    g.position.set(d[2], 0.35, d[3]); armasGrupo.add(g);
-    mp.armasChao.set(d[0], { id: d[0], arma: d[1], pos: new V3(d[2], 0, d[3]), malha: g, pedido: false });
+    const T = G.THREE, a = ARMAS[d[1]], raiz = G.weapon.root, g = new T.Group(), giro = new T.Group(); if (!a) return;
+    const noMundo = o => { o.traverse(x => { x.layers.set(0); x.frustumCulled = true; x.castShadow = false; }); return o; };
+    if (a.faca) { const f = noMundo(facaModelo.clone(true)); f.position.set(-0.05, 0, 0); f.rotation.set(0, 0, 0); f.scale.setScalar(2.2); giro.add(f); }
+    else {
+      const v = VARIANTES[d[1]];
+      for (const i of [0, 1, 2, 3]) { const c = noMundo(raiz.children[i].clone()); c.visible = true; c.scale.set(v.g, v.g, v.z); c.position.set(0, 0, 0.08 * v.z); if (i === 2) c.material = acabamentos[v.acab]; giro.add(c); }
+      if (v.pente) { const c = noMundo(carregador.clone(true)); c.visible = true; c.scale.set(v.g * v.pente[0], v.g * v.pente[1], v.z); c.position.set(0, -0.02, (zCarregador + 0.08) * v.z); giro.add(c); }
+      giro.rotation.z = 0.25;
+    }
+    giro.position.y = 0.5; g.add(giro);
+    const anel = new T.Mesh(new T.RingGeometry(0.3, 0.38, 28), new T.MeshBasicMaterial({ color: TIMES[a.time].cor, transparent: true, opacity: 0.75, side: T.DoubleSide, depthWrite: false }));
+    anel.rotation.x = -Math.PI / 2; anel.position.y = 0.04; g.add(anel);
+    g.position.set(d[2], 0, d[3]); armasGrupo.add(g);
+    mp.armasChao.set(d[0], { id: d[0], arma: d[1], pos: new V3(d[2], 0, d[3]), malha: g, giro, anel, pedido: false });
   }
   function tirarArmaDoChao(id) {
     const it = mp.armasChao.get(id); if (!it) return;
     armasGrupo.remove(it.malha);
-    it.malha.children[0].geometry.dispose(); it.malha.children[0].material.dispose();
-    it.malha.children[1].material.map.dispose(); it.malha.children[1].material.dispose();
+    it.anel.geometry.dispose(); it.anel.material.dispose();      // o resto é compartilhado com a arma do jogo
     mp.armasChao.delete(id);
   }
   function limparArmas() {
@@ -1228,7 +1370,7 @@
     mp.arma = null; mp.rajada = 0; mp.semPegarT = 0.5; tocar("reload_magout");
   }
   function facada() {
-    facaAnim = 0.22;
+    facaAnim = 0.32;
     const p = G.player, meuTime = eu() && eu().time; let alvo = null, perto = FACA.alcance, costas = false;
     for (const j of mp.jogadores.values()) {
       if (j.id === mp.meuId || !j.vivo || j.time === meuTime) continue;
@@ -1272,102 +1414,84 @@
         if (it.espera) { if (d > 1.8) it.espera = false; continue; }
         if (!it.pedido && d < 1.1 && p.pos.y < 2) { it.pedido = true; mp.semPegarT = 0.4; enviar({ t: "armaPeguei", id: it.id }); break; }
       }
-    for (const it of mp.armasChao.values()) it.malha.children[0].rotation.y += dt * 1.2;
+    let perto = null, dPerto = 2.4;
+    for (const it of mp.armasChao.values()) {
+      const d = Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z);
+      it.giro.visible = d < 16;                       // de longe fica só o anel, para não pesar
+      it.giro.rotation.y += dt * 1.2;
+      if (d < dPerto) { dPerto = d; perto = it; }
+    }
+    if (perto && p.alive) G.hud.message(ARMAS[perto.arma].nome + (a ? " · solte a sua com G para trocar" : ""), 0.3);
   }
   window.addEventListener("keydown", ev => {
     if (ev.code === "KeyG" && !ev.repeat && emRodada() && G.player.alive && !(tela && !tela.hidden)) soltarArma();
   });
 
   /* ------------------------------------------------------- modelos das armas */
-  // Cada arma tem um modelo próprio na tela, desenhado por código com caixas e cilindros e preso à
-  // arma original do jogo (assim herda o balanço, o recuo e a mira). Medidas em metros: o cano fica em
-  // y = 0 apontando para -z, a linha de mira em y = 0.07, o punho da mão direita perto de z = +0.1.
-  // O Fuzil M4 usa o modelo original do jogo.
-  let modelos = {}, pecasOriginais = [], maoEsquerda = null, maoDireita = null, zMaoDireita = 0, clarao = null, facaNaMao = null, modeloAtual, facaAnim = 0;
-  const AVANCO_CURTA = 0.17;      // pistolas e revólver ficam mais à frente, senão colam na câmera
+  // As armas de fogo usam o modelo original do jogo (o único detalhado), cada uma com uma variação:
+  // z = comprimento, g = grossura, acab = acabamento da coronha e do guarda-mão,
+  // pente = [largura, altura] do carregador (0 = sem carregador), duasMaos = mão esquerda no guarda-mão.
+  const VARIANTES = {
+    p_fuzil:    { z: 1,    g: 1,    acab: "preto",   pente: [1, 1],      duasMaos: true },
+    t_fuzil:    { z: 1.06, g: 1.04, acab: "madeira", pente: [1, 1.25],   duasMaos: true },
+    p_metra:    { z: 0.72, g: 0.95, acab: "preto",   pente: [0.8, 1.15], duasMaos: true },
+    t_metra:    { z: 0.6,  g: 1,    acab: "areia",   pente: [0.9, 1.3],  duasMaos: true },
+    p_12:       { z: 1.1,  g: 1.15, acab: "madeira", pente: 0,           duasMaos: true },
+    t_12:       { z: 0.62, g: 1.2,  acab: "madeira", pente: 0,           duasMaos: true },
+    p_pistola:  { z: 0.42, g: 0.82, acab: "preto",   pente: [0.9, 0.7],  duasMaos: false },
+    p_revolver: { z: 0.38, g: 0.9,  acab: "aco",     pente: 0,           duasMaos: false },
+    t_pistola:  { z: 0.45, g: 0.85, acab: "areia",   pente: [0.9, 0.7],  duasMaos: false },
+    t_pistola2: { z: 0.42, g: 0.82, acab: "preto",   pente: [0.9, 1.5],  duasMaos: false },
+  };
+  let pecasDaArma = [], carregador = null, zCarregador = 0, coronha = null, acabamentos = {}, maoEsquerda = null, clarao = null,
+    facaNaMao = null, facaModelo = null, modeloAtual, facaAnim = 0, facaBalanco = 0;
   function montarModelos() {
     const T = G.THREE, raiz = G.weapon.root;
-    pecasOriginais = raiz.children.slice(0, 8); clarao = raiz.children[8]; maoDireita = raiz.children[9]; zMaoDireita = maoDireita.position.z; maoEsquerda = raiz.children[10];
-    const luva = raiz.children[9].children[0].material;
-    const cor = (hex, rug = 0.75, met = 0.1) => new T.MeshStandardMaterial({ color: hex, roughness: rug, metalness: met });
-    const metal = cor(0x1d2024, 0.5, 0.55), poli = cor(0x2a2e33, 0.9, 0), madeira = cor(0x6b4226), areia = cor(0x9a8660), aco = cor(0x70767c, 0.45, 0.7);
-    const pronto = m => { m.layers.set(1); m.frustumCulled = false; m.receiveShadow = true; return m; };   // mesma camada da arma do jogo
-    const cx = (g, mat, w, h, d, x, y, z, rx = 0) => { const m = pronto(new T.Mesh(new T.BoxGeometry(w, h, d), mat)); m.position.set(x, y, z); m.rotation.x = rx; g.add(m); return m; };
-    // cilindro deitado no eixo do cano: começa em z0 e vai "comp" metros para a frente
-    const cano = (g, mat, r, comp, x, y, z0) => { const m = pronto(new T.Mesh(new T.CylinderGeometry(r, r, comp, 14), mat)); m.rotation.x = Math.PI / 2; m.position.set(x, y, z0 - comp / 2); g.add(m); return m; };
-    const miras = (g, zFrente) => { cx(g, metal, 0.006, 0.07, 0.008, 0, 0.035, zFrente); cx(g, metal, 0.03, 0.03, 0.008, 0, 0.055, 0.08); };
-    const novo = (chave, boca, maoEsq, montar) => {
-      const g = new T.Group(), curta = !maoEsq; g.visible = false; raiz.add(g); montar(g);
-      if (curta) g.position.z = -AVANCO_CURTA;
-      modelos[chave] = { g, boca: boca + (curta ? AVANCO_CURTA : 0), maoEsq, curta };
-    };
-
-    novo("t_fuzil", 0.56, true, g => {                       // AK-47: madeira, carregador curvo
-      cx(g, metal, 0.038, 0.06, 0.3, 0, -0.002, 0.02); cx(g, metal, 0.022, 0.016, 0.26, 0, 0.034, 0.02); cano(g, metal, 0.011, 0.42, 0, 0, -0.13); cano(g, metal, 0.013, 0.2, 0, 0.032, -0.13);
-      cx(g, madeira, 0.052, 0.06, 0.2, 0, -0.005, -0.23); cx(g, madeira, 0.042, 0.085, 0.27, 0, -0.03, 0.3, -0.1);
-      cx(g, madeira, 0.035, 0.1, 0.045, 0, -0.085, 0.12, 0.3);
-      cx(g, metal, 0.03, 0.09, 0.055, 0, -0.07, -0.06, -0.2); cx(g, metal, 0.03, 0.09, 0.055, 0, -0.14, -0.085, -0.5); cx(g, metal, 0.03, 0.07, 0.055, 0, -0.2, -0.125, -0.8);
-      miras(g, -0.5);
-    });
-    novo("p_metra", 0.36, true, g => {                       // MP5: compacta, carregador fino
-      cx(g, metal, 0.036, 0.058, 0.3, 0, -0.002, 0.0); cx(g, metal, 0.02, 0.016, 0.2, 0, 0.034, -0.02); cano(g, metal, 0.011, 0.2, 0, 0, -0.15);
-      cx(g, poli, 0.052, 0.062, 0.15, 0, -0.005, -0.21); cx(g, poli, 0.034, 0.1, 0.045, 0, -0.085, 0.11, 0.25);
-      cx(g, metal, 0.024, 0.19, 0.04, 0, -0.12, -0.07, -0.18);
-      cx(g, metal, 0.01, 0.01, 0.2, -0.016, 0.0, 0.25); cx(g, metal, 0.01, 0.01, 0.2, 0.016, 0.0, 0.25);
-      miras(g, -0.3);
-    });
-    novo("t_metra", 0.3, true, g => {                        // Uzi: caixote, carregador dentro do punho
-      cx(g, metal, 0.042, 0.07, 0.28, 0, -0.005, -0.03); cx(g, metal, 0.016, 0.014, 0.1, 0, 0.036, 0.0); cano(g, metal, 0.012, 0.13, 0, 0, -0.17);
-      cx(g, poli, 0.036, 0.11, 0.055, 0, -0.09, 0.09); cx(g, metal, 0.026, 0.16, 0.036, 0, -0.2, 0.09);
-      cx(g, poli, 0.05, 0.03, 0.12, 0, -0.05, -0.1);
-      miras(g, -0.15);
-    });
-    novo("p_12", 0.62, true, g => {                          // Escopeta 12: cano grosso, tubo embaixo, telha de bombear
-      cx(g, metal, 0.038, 0.066, 0.22, 0, -0.004, 0.06); cano(g, metal, 0.017, 0.57, 0, 0.012, -0.05); cano(g, metal, 0.014, 0.42, 0, -0.022, -0.05);
-      cx(g, madeira, 0.054, 0.052, 0.17, 0, -0.022, -0.27); cx(g, madeira, 0.042, 0.09, 0.28, 0, -0.03, 0.31, -0.12);
-      cx(g, metal, 0.006, 0.03, 0.008, 0, 0.045, -0.6);
-    });
-    novo("t_12", 0.34, true, g => {                          // 12 serrada: dois canos curtos, sem coronha
-      cx(g, metal, 0.062, 0.07, 0.14, 0, 0.0, 0.03); cano(g, aco, 0.017, 0.3, -0.018, 0.008, -0.04); cano(g, aco, 0.017, 0.3, 0.018, 0.008, -0.04);
-      cx(g, madeira, 0.05, 0.045, 0.14, 0, -0.03, -0.18); cx(g, madeira, 0.04, 0.12, 0.06, 0, -0.07, 0.13, 0.5);
-    });
-    const pistola = (chave, mat, compr, extra) => novo(chave, compr - 0.02, false, g => {
-      cx(g, metal, 0.03, 0.042, compr, 0, 0.03, 0.1 - compr / 2); cx(g, mat, 0.028, 0.03, compr - 0.03, 0, -0.004, 0.1 - compr / 2 + 0.01);
-      cx(g, mat, 0.03, 0.12, 0.048, 0, -0.07, 0.09, 0.22);
-      cx(g, metal, 0.005, 0.014, 0.006, 0, 0.058, 0.11 - compr); cx(g, metal, 0.02, 0.014, 0.006, 0, 0.058, 0.085);
-      if (extra) extra(g);
-    });
-    pistola("p_pistola", poli, 0.19);                                                             // 9mm
-    pistola("t_pistola", areia, 0.22);                                                            // .45, armação cor de areia
-    pistola("t_pistola2", poli, 0.2, g => cx(g, metal, 0.022, 0.11, 0.034, 0, -0.17, 0.115, 0.22));   // automática: carregador comprido
-    novo("p_revolver", 0.2, false, g => {                    // Revólver .38: tambor, cabo de madeira
-      cano(g, aco, 0.011, 0.16, 0, 0.03, -0.04); cx(g, aco, 0.014, 0.02, 0.16, 0, 0.008, -0.12);
-      cano(g, aco, 0.03, 0.06, 0, 0.012, 0.03); cx(g, aco, 0.028, 0.07, 0.09, 0, 0.012, 0.075);
-      cx(g, madeira, 0.03, 0.11, 0.045, 0, -0.065, 0.11, 0.35);
-      cx(g, aco, 0.005, 0.016, 0.006, 0, 0.05, -0.19);
-    });
-    // a faca fica presa direto na câmera, porque a arma do jogo some quando se está de faca
+    pecasDaArma = raiz.children.slice(0, 8).filter((_, i) => i !== 5); carregador = raiz.children[5]; zCarregador = carregador.position.z;
+    coronha = raiz.children[2]; clarao = raiz.children[8]; maoEsquerda = raiz.children[10];
+    const areia = carregador.children[0].material, madeira = areia.clone(); madeira.color.set(0x8a5230);
+    acabamentos = { preto: coronha.material, areia, madeira, aco: raiz.children[0].material };
+    // a faca: lâmina recortada, guarda e cabo, na mão de luva do próprio jogo. Fica presa à câmera na mesma
+    // posição em que o jogo segura o fuzil, porque a arma do jogo some quando se está de faca.
     facaNaMao = new T.Group(); facaNaMao.visible = false;
-    cx(facaNaMao, aco, 0.003, 0.026, 0.15, 0, 0, -0.115); cx(facaNaMao, poli, 0.02, 0.026, 0.09, 0, 0, 0.01); cx(facaNaMao, aco, 0.026, 0.042, 0.007, 0, 0, -0.038);
-    cx(facaNaMao, luva, 0.06, 0.07, 0.09, 0, -0.015, 0.02); cx(facaNaMao, luva, 0.06, 0.06, 0.3, 0.01, -0.05, 0.2, -0.2);
-    facaNaMao.rotation.set(0.5, 0.75, -0.2);
+    const mao = raiz.children[9].clone(true); facaNaMao.add(mao);
+    const perfil = new T.Shape(); perfil.moveTo(0, -0.013); perfil.lineTo(0.12, -0.013); perfil.lineTo(0.175, 0.006); perfil.lineTo(0.13, 0.014); perfil.lineTo(0, 0.014); perfil.closePath();
+    const pronto = m => { m.layers.set(1); m.frustumCulled = false; m.receiveShadow = true; return m; };
+    const lamina = pronto(new T.Mesh(new T.ExtrudeGeometry(perfil, { depth: 0.003, bevelEnabled: true, bevelThickness: 0.0012, bevelSize: 0.0012, bevelSegments: 1 }), raiz.children[0].material));
+    const cabo = pronto(new T.Mesh(new T.CapsuleGeometry(0.014, 0.085, 4, 10), coronha.material)); cabo.rotation.z = Math.PI / 2; cabo.position.set(-0.055, 0, 0.0015);
+    const guarda = pronto(new T.Mesh(new T.BoxGeometry(0.008, 0.045, 0.014), raiz.children[1].material)); guarda.position.set(-0.004, 0, 0.0015);
+    facaModelo = new T.Group(); facaModelo.add(lamina, cabo, guarda);
+    const faca = facaModelo.clone(true);
+    faca.position.set(0.02, -0.07, 0.1); faca.rotation.set(0, Math.PI / 2, 0.55);   // cabo dentro do punho, lâmina para a frente e um pouco para cima
+    facaNaMao.add(faca);
     G.camera.add(facaNaMao);
   }
   function aplicarModelo(chave) {
-    const m = modelos[chave], original = !m;          // sem modelo próprio (M4, mãos vazias, jogo solo): arma original
-    for (const o of pecasOriginais) o.visible = original;
-    for (const k in modelos) modelos[k].g.visible = k === chave;
-    maoEsquerda.visible = original || m.maoEsq;
-    maoDireita.position.z = zMaoDireita - (m && m.curta ? AVANCO_CURTA : 0);
-    clarao.position.z = original ? -0.531 : -m.boca;
+    const v = VARIANTES[chave] || VARIANTES.p_fuzil;      // mãos vazias e jogo solo: fuzil original
+    for (const o of pecasDaArma) o.scale.set(v.g, v.g, v.z);
+    carregador.visible = !!v.pente;
+    if (v.pente) carregador.scale.set(v.g * v.pente[0], v.g * v.pente[1], v.z);
+    carregador.position.z = zCarregador * v.z;
+    coronha.material = acabamentos[v.acab];
+    maoEsquerda.visible = v.duasMaos;
+    clarao.position.z = -0.531 * v.z;
     modeloAtual = chave;
   }
+  // a faca balança com a passada e, no golpe, recua, corta em arco da direita para a esquerda e volta
   function animarFaca(dt, naMao) {
     facaNaMao.visible = naMao;
     if (!naMao) return;
+    const p = G.player, anda = Math.min(1, (p.speed || 0) / 4);
+    facaBalanco += dt * (4 + anda * 7);
     facaAnim = Math.max(0, facaAnim - dt);
-    const golpe = Math.sin(Math.min(1, facaAnim / 0.22) * Math.PI);
-    facaNaMao.position.set(0.2 - golpe * 0.1, -0.17 + golpe * 0.04, -0.5 - golpe * 0.22);
+    const t = 1 - facaAnim / 0.32, ativo = facaAnim > 0;
+    const recuo = ativo && t < 0.25 ? t / 0.25 : 0;                                   // puxa para trás
+    const corte = ativo && t >= 0.25 ? Math.sin((t - 0.25) / 0.75 * Math.PI) : 0;     // estocada em arco
+    facaNaMao.position.set(
+      0.09 + Math.sin(facaBalanco * 0.5) * 0.006 * (0.3 + anda) + recuo * 0.04 - corte * 0.13,
+      -0.115 + Math.abs(Math.sin(facaBalanco)) * 0.008 * anda - recuo * 0.02 + corte * 0.03,
+      -0.33 + recuo * 0.07 - corte * 0.2);
+    facaNaMao.rotation.set(0.034 - corte * 0.35, 0.085 + recuo * 0.25 + corte * 0.75, -0.03 - corte * 0.3);
   }
 
   /* --------------------------------------------------------- laço da partida */
@@ -1399,7 +1523,7 @@
       atualizarBonecos(dt); atualizarObjetivo();
       mp.envioT -= dt;
       if (mp.envioT <= 0) {
-        mp.envioT = 1 / 15;
+        mp.envioT = 1 / 30;      // 30 atualizações por segundo entre os jogadores
         if (j) enviar({ t: "estado", p: arr(p.pos), y: +p.yaw.toFixed(3), x: +p.pitch.toFixed(3), c: p.crouching ? 1 : 0, v: j.vivo ? 1 : 0 });
         if (mp.anfitriao) paraTodos({ t: "estados", tempo: +mp.tempo.toFixed(1),
           j: [...mp.jogadores.values()].map(x => [x.id, ...arr(x.pos), +x.yaw.toFixed(3), +x.pitch.toFixed(3), x.agachado ? 1 : 0, x.vivo ? 1 : 0]),
