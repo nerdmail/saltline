@@ -61,6 +61,30 @@
   const NASCER_TERRORISTAS = [[27.4, 11.6], [20.9, 14.7], [23.4, 23.2], [18, 24.4], [27.2, -12.6], [29, 14], [27, 8], [18, 22.2]];   // espalhados no lado leste (cais)
   // posições no mapa [x, z]. O galpão (sala dos reféns) vai de x -16 a 12 e de z -28 a -11.
   const REFENS = [[-14.5, -25.9], [-13.5, -26.1], [-13.2, -25.2]];      // dentro da sala, longe da mesa e do cabide de armas
+  // Duto de ar: sai do teto da sala dos reféns e dá a volta por dentro do galpão, lá no alto. Dentro dele só se anda deitado.
+  // zn/zs = trechos norte e sul, xe/xw = trechos leste e oeste; a boca norte fica na beira leste do teto da sala (x0)
+  // e a boca oeste na beira sul (zb). Chão do duto em y, com alt de altura por dentro.
+  const DUTO = { y: 5.1, alt: 1.3, zn: -24.28, zs: -14.2, xe: 3, xw: -13, x0: -10.3, zb: -23.8 };
+  const ALCAPAO = [-11.1, -24.68, -10.3, -23.88];        // abertura no teto da sala, em cima da escada de mão
+  // escadas de mão: eixo onde a pessoa fica (x, z), de y0 a y1, e para que lado ela olha ao subir (nx, nz).
+  // d = distância do eixo até a escada; curta = não passa do topo (termina dentro do duto)
+  const ESCADAS = [
+    { x: -10.75, z: -24.28, y0: 2.6,  y1: 5.22, nx: 1,  nz: 0, d: 0.33 },               // da sala para o teto dela e a boca do duto
+    { x: 3,      z: -24.28, y0: 5.1,  y1: 8.45, nx: 1,  nz: 0, d: 0.42 },               // do duto para o telhado (lado norte)
+    { x: 0.15,   z: -14.2,  y0: 5.1,  y1: 8.45, nx: 0,  nz: 1, d: 0.42 },               // do duto para o telhado (lado sul)
+    { x: 3,      z: -19.2,  y0: 0.03, y1: 5.22, nx: 1,  nz: 0, d: 0.42, curta: true },  // do duto para o chão do galpão (leste)
+    { x: -13,    z: -16.5,  y0: 0.03, y1: 5.22, nx: -1, nz: 0, d: 0.42, curta: true },  // do duto para o chão do galpão (oeste)
+    { x: -16.75, z: -19.5,  y0: 0,    y1: 9.7,  nx: 1,  nz: 0, d: 0.4 },                // do telhado para o chão, por fora (oeste)
+    { x: 12.75,  z: -19.5,  y0: 0,    y1: 9.7,  nx: -1, nz: 0, d: 0.4 },                // do telhado para o chão, por fora (leste)
+  ];
+  // onde se anda deitado: [x de, z de, x até, z até, y de, y até] (as bocas e os buracos das escadas entram com folga)
+  const DEITAR = [
+    [-10.9, DUTO.zn - 0.5, 3.5, DUTO.zn + 0.5, 4.85, 6.6],
+    [2.5, DUTO.zn + 0.5, 3.5, DUTO.zs - 0.5, 4.85, 6.6], [2.5, -19.7, 3.5, -18.7, 3.4, 6.6],
+    [-13.5, DUTO.zs - 0.5, 3.5, DUTO.zs + 0.5, 4.85, 6.6],
+    [-13.5, -24.4, -12.5, DUTO.zs - 0.5, 4.85, 6.6], [-13.5, -17, -12.5, -16, 3.4, 6.6],
+  ];
+  const QUEDA = { altura: 3.2, dano: 0.5 };     // cair de mais que isso tira metade da vida (só de jogador; refém não se machuca)
   const MESA = [-13.9, -12.1, -26.68];                                  // mesa encostada na parede norte: x de, x até, z da frente
   // quem são os reféns, na ordem das posições acima: cor da roupa, cabelo, tamanho e ritmo de caminhada
   const CIVIS = [
@@ -124,6 +148,7 @@
     granadas: [],             // granadas no ar: { pos, vel, t, por, malha }
     bolsa: { granada: 0, bomba: 0, relogio: 0 }, tempoIdx: 1, desarmarT: 0, proxId: 1,
     colete: false, capacete: false,     // proteção que eu estou usando
+    correr: false, ctrl: false, deitado: false, naEscada: null, quedaTopo: 0, picharT: 0, grades: null,
     arma: null,               // chave em ARMAS da arma na mão, ou null
     armasChao: new Map(),     // id -> { id, arma, pos, malha, pedido }
     cadT: 0, rajada: 0, gatilhoAntes: false, semPegarT: 0, armaVisivel: null, passoT: 0,
@@ -257,6 +282,9 @@
       case "armaSolta":
         if (ARMAS[m.arma] && Array.isArray(m.p)) paraTodos({ t: "armaChao", d: [mp.proxId++, m.arma, +m.p[0], +m.p[1], +m.p[2] || 0], por: id });
         break;
+      case "pichar":
+        if (j.vivo && Array.isArray(m.p) && Array.isArray(m.n)) paraTodos({ t: "pichacao", p: m.p, n: m.n, time: j.time });
+        break;
       case "passo":
         paraTodos({ t: "passo", p: m.p, id }, id);
         break;
@@ -363,7 +391,7 @@
       case "baixa": {
         const v = mp.jogadores.get(m.quem), k = m.por && mp.jogadores.get(m.por);
         if (v && v.id !== mp.meuId) v.vivo = false;
-        if (v) G.hud.feed(k ? `<b>${esc(k.nome)}</b> eliminou <b>${esc(v.nome)}</b>` : m.por === "refem" ? `<b>${esc(v.nome)}</b> foi abatido por um refém` : `<b>${esc(v.nome)}</b> caiu para as máquinas`);
+        if (v) G.hud.feed(k ? `<b>${esc(k.nome)}</b> eliminou <b>${esc(v.nome)}</b>` : m.por === "refem" ? `<b>${esc(v.nome)}</b> foi abatido por um refém` : m.por === "queda" ? `<b>${esc(v.nome)}</b> caiu de muito alto` : `<b>${esc(v.nome)}</b> caiu para as máquinas`);
         break;
       }
       case "feed": G.hud.feed(m.html); break;
@@ -385,6 +413,7 @@
         break;
       }
       case "porta": aplicarPorta(!!m.aberta); break;
+      case "pichacao": porPichacao(m); break;
       case "armaChao":
         porArmaNoChao(m.d);
         { const q = mp.jogadores.get(m.por); if (q) q.arma = null; }
@@ -660,7 +689,9 @@
     const t = eu() && TIMES[eu().time];
     if (t && meu) G.hud.radio("Você está com os " + t.nome + ". " + t.objetivo + ".", CFG.tempoPreparo + 1);
     else G.hud.message("Você entra na próxima rodada", 6);
-    if (meu) G.hud.message((meu[1] > 1 ? "Armas no cabide sob a janela" : "Pegue uma arma no chão") + " · G solta · R recarrega", CFG.tempoPreparo + 5);
+    if (meu) G.hud.message((meu[1] > 1 ? "Armas no cabide sob a janela" : "Pegue uma arma no chão") + " · G solta · R recarrega · C corre · P picha", CFG.tempoPreparo + 6);
+    gradesVazadas(true); G.player.tuning.sprint = G.player.tuning.walk * 2;      // correr = o dobro de andar
+    mp.quedaTopo = meu ? meu[1] : 0; mp.naEscada = null;
     if (!meu) p.alive = false;
     placarEl.hidden = false;
   }
@@ -675,7 +706,9 @@
       G.audio.setIntensity(0.15);
     } catch {}
     if (rotuloHud) rotuloHud.textContent = "Relés";
-    cenario.visible = false; explosivos.visible = false; bolsaEl.hidden = true; limparExplosivos(); limparArmas();
+    cenario.visible = false; explosivos.visible = false; bolsaEl.hidden = true; limparExplosivos(); limparArmas(); limparPichacoes();
+    gradesVazadas(false);
+    try { const t = G.player.tuning; t.sprint = 6.4; t.crouchHeight = 1.15; t.crouch = 1.9; } catch {}
     try { G.weapon.name = nomeArmaOriginal; aplicarModelo(null); animarFaca(0, false); } catch {}
     for (const j of mp.jogadores.values()) if (j.boneco) j.boneco.grupo.visible = false;
     for (const r of mp.refens) r.boneco.grupo.visible = false;
@@ -876,7 +909,7 @@
   // pose: "arma" (arma longa nas duas mãos), "pistola" (braço direito estendido), "solto" (braços ao longo do corpo)
   // ou "preso" (pulsos amarrados à frente).
   function posar(b, cur, yaw, k, dt, o) {
-    const vel = dt > 0 ? Math.hypot(cur.x - b.ult.x, cur.z - b.ult.z) / dt : 0, sentado = !!o.sentado && o.vivo;
+    const vel = dt > 0 ? Math.hypot(cur.x - b.ult.x, cur.z - b.ult.z) / dt : 0, sentado = !!o.sentado && o.vivo, deitado = !!o.deitado && o.vivo;
     b.ult.copy(cur);
     b.grupo.position.copy(cur);
     let d = yaw - b.grupo.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -886,21 +919,23 @@
     const s = Math.sin(b.fase) * b.andar, ir = (obj, eixo, alvo) => { obj.rotation[eixo] += (alvo - obj.rotation[eixo]) * k; };
     b.pernas.forEach((p, i) => {
       const lado = i ? -s : s;
-      ir(p.coxa, "x", !o.vivo ? 0 : sentado ? 2.2 : lado * 0.7); ir(p.canela, "x", !o.vivo ? 0 : sentado ? -1.95 : -Math.max(0, -lado) * 0.9);
+      ir(p.coxa, "x", !o.vivo ? 0 : sentado ? 2.2 : lado * (deitado ? 0.3 : 0.7)); ir(p.canela, "x", !o.vivo ? 0 : sentado ? -1.95 : -Math.max(0, -lado) * 0.9);
     });
     const [esq, dir] = b.bracos;
     let ex = 0, ez = 0, ea = 0, dx = 0, dz = 0, da = 0;                        // ombro x, ombro z, cotovelo
     if (!o.vivo) { /* braços soltos */ }
+    else if (deitado) { ex = dx = o.pose === "preso" ? 2.6 : 2.85; ez = o.pose === "solto" ? 0.1 : 0.3; dz = -ez; ea = da = o.pose === "preso" ? 0.5 : 0.25; }   // rastejando, braços à frente
     else if (o.pose === "arma") { ex = dx = Math.PI / 2 + o.pitch * 0.9; ez = 0.42; dz = -0.1; }
     else if (o.pose === "preso") { ex = dx = sentado ? 0.75 : 0.35; ez = 0.3; dz = -0.3; ea = da = 0.9; }
     else if (o.pose === "solto") { ex = -s * 0.5; dx = s * 0.5; ea = da = 0.15; }
     else { dx = Math.PI / 2 - 0.08 + (o.pitch || 0) * 0.9; dz = -0.1; ex = -s * 0.5; ea = 0.2; }
     ir(esq.ombro, "x", ex); ir(esq.ombro, "z", ez); ir(esq.ante, "x", ea);
     ir(dir.ombro, "x", dx); ir(dir.ombro, "z", dz); ir(dir.ante, "x", da);
-    ir(b.tronco, "x", !o.vivo ? 0 : sentado ? -0.12 : (b.curvado ? -0.22 : -0.04) - b.andar * 0.06);
+    ir(b.tronco, "x", !o.vivo ? 0 : sentado ? -0.12 : deitado ? 0.12 : (b.curvado ? -0.22 : -0.04) - b.andar * 0.06);
     b.corpo.scale.y += ((o.agachado && o.vivo ? 0.68 : 1) - b.corpo.scale.y) * k;
-    b.corpo.rotation.x += ((o.vivo ? 0 : -Math.PI / 2) - b.corpo.rotation.x) * k;   // caído
-    b.corpo.position.y += ((!o.vivo ? 0.16 : sentado ? -0.72 : 0) - b.corpo.position.y) * k;
+    b.corpo.rotation.x += ((o.vivo && !deitado ? 0 : -Math.PI / 2) - b.corpo.rotation.x) * k;   // caído ou rastejando: de bruços
+    b.corpo.position.y += ((!o.vivo ? 0.16 : deitado ? 0.2 : sentado ? -0.72 : 0) - b.corpo.position.y) * k;
+    b.corpo.position.z += ((deitado ? 0.8 : 0) - b.corpo.position.z) * k;              // deitado, o corpo fica centrado no lugar da pessoa
     for (const c of b.cordas) c.visible = o.vivo && o.pose === "preso";
   }
   function atualizarBonecos(dt) {
@@ -914,7 +949,8 @@
       b.grupo.visible = j.pos.y > -40;
       armarBoneco(b, j.vivo ? j.arma : null);
       b.colete.visible = !!(j.armadura & 1); b.capacete.visible = !!(j.armadura & 2); b.bone.visible = !b.capacete.visible;
-      posar(b, j.cur, j.yaw, k, dt, { vivo: j.vivo, agachado: j.agachado, pitch: j.pitch, pose: !a ? "solto" : a.faca || (v && v.curta) ? "pistola" : "arma" });
+      j.deitado = noDuto(j.cur);
+      posar(b, j.cur, j.yaw, k, dt, { vivo: j.vivo, agachado: j.agachado && !j.deitado, deitado: j.deitado, pitch: j.pitch, pose: !a ? "solto" : a.faca || (v && v.curta) ? "pistola" : "arma" });
       b.placa.visible = j.vivo && j.time === meuTime;
       const al = j.alvo;
       if (al) {
@@ -930,7 +966,7 @@
       r.miraT = (r.miraT || 0) - dt;
       if (r.estado === 1 && r.miraT <= 0 && dx * dx + dz * dz > lim * lim) r.yaw = Math.atan2(-dx, -dz);   // só vira quando anda de verdade
       r.boneco.grupo.visible = r.estado !== 2;
-      posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: false, pitch: 0, pose: r.estado === 1 ? "pistola" : "preso", sentado: r.estado === 0 && !!r.civil.senta });
+      posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: false, pitch: 0, pose: r.estado === 1 ? "pistola" : "preso", sentado: r.estado === 0 && !!r.civil.senta, deitado: noDuto(r.cur) });
       r.boneco.arma.visible = r.estado === 1;                 // solto pelo policial, já armado
     }
   }
@@ -956,8 +992,8 @@
         melhor = { dist: t, cabeca: y > base.y + altura - 0.32, ponto: new V3(o.x + dir.x * t, y, o.z + dir.z * t), ...extra };
       }
     };
-    for (const j of mp.jogadores.values()) if (j.id !== mp.meuId && j.vivo && j.time !== meuTime) testar(j.cur, j.agachado ? 1.15 : 1.7, { j });
-    for (const r of mp.refens) if (r.estado < 2) testar(r.cur, (r.estado === 0 && r.civil.senta ? 1.08 : 1.7) * r.civil.escala, { r });
+    for (const j of mp.jogadores.values()) if (j.id !== mp.meuId && j.vivo && j.time !== meuTime) testar(j.cur, j.deitado ? 0.6 : j.agachado ? 1.15 : 1.7, { j });
+    for (const r of mp.refens) if (r.estado < 2) testar(r.cur, noDuto(r.cur) ? 0.6 : (r.estado === 0 && r.civil.senta ? 1.08 : 1.7) * r.civil.escala, { r });
     return melhor;
   }
   function instalarTiros() {
@@ -1186,20 +1222,26 @@
     const ia = dif().refem;
     for (const r of mp.refens) {
       if (r.estado > 1) continue;
-      let wx = 0, wz = 0, ancora = r.casa, folga = 1.2;
+      let wx = 0, wz = 0, ancora = r.casa, folga = 1.2, subir = null;
       if (r.estado === 1) {
         const lider = mp.jogadores.get(r.lider);
         if (!lider || !lider.vivo) { r.estado = 0; r.lider = null; r.casa.copy(r.pos); paraTodos({ t: "refem", i: r.i, ev: "largado" }); continue; }
         const lp = posDe(lider), dx = lp.x - r.pos.x, dz = lp.z - r.pos.z, d = Math.hypot(dx, dz);
         ancora = lp; folga = 2.6;
         if (d > 9) { r.pos.set(lp.x - dx / d * 1.2, lp.y, lp.z - dz / d * 1.2); r.trilha.length = 0; }   // o líder usou uma saída secreta
-        else if (Math.hypot(d, lp.y - r.pos.y) <= 1.7) r.trilha.length = 0;      // chegou (contando a altura: na escada o líder fica abaixo)
+        else if (Math.hypot(d, lp.y - r.pos.y) <= 1.7 && !noMeioDaEscada(r.pos)) {   // chegou: fica parado, mas guarda os últimos passos do líder para não cortar caminho depois
+          const ult = r.trilha[r.trilha.length - 1];
+          if (!ult || ult.distanceTo(lp) > 0.5) r.trilha.push(lp.clone());
+          while (r.trilha.length > 8) r.trilha.shift();
+        }      // chegou (contando a altura: na escada o líder fica abaixo)
         else {                                         // segue a trilha por onde o líder passou (funciona na porta e na escada)
           const ult = r.trilha[r.trilha.length - 1];
-          if (!ult || Math.hypot(lp.x - ult.x, lp.z - ult.z) > 0.5) r.trilha.push(lp.clone());
-          while (r.trilha.length > 1 && Math.hypot(r.trilha[0].x - r.pos.x, r.trilha[0].z - r.pos.z) < 0.55) r.trilha.shift();
-          const al = r.trilha[0], ax = al.x - r.pos.x, az = al.z - r.pos.z, ad = Math.hypot(ax, az) || 1;
-          wx = ax / ad; wz = az / ad;
+          if (!ult || ult.distanceTo(lp) > 0.5) r.trilha.push(lp.clone());
+          while (r.trilha.length > 1 && Math.hypot(r.trilha[0].x - r.pos.x, r.trilha[0].z - r.pos.z) < 0.55 && Math.abs(r.trilha[0].y - r.pos.y) < 0.7) r.trilha.shift();
+          const al = r.trilha[0], ax = al.x - r.pos.x, az = al.z - r.pos.z, ad = Math.hypot(ax, az) || 1, esc = escadaEm(r.pos, 0.8);
+          const yAlvo = esc ? Math.max(esc.y0, Math.min(esc.y1, al.y + 0.1)) : 0;
+          if (esc && Math.abs(yAlvo - r.pos.y) > 0.08 && (noMeioDaEscada(r.pos) || (Math.abs(al.y - r.pos.y) > 0.45 && Math.hypot(al.x - esc.x, al.z - esc.z) < 0.9))) subir = { e: esc, y: yAlvo };   // o caminho continua escada acima (ou abaixo)
+          else if (ad > 0.05) { wx = ax / ad; wz = az / ad; }
         }
       }
       if (r.estado === 1) {
@@ -1217,10 +1259,19 @@
       const wl = Math.hypot(wx, wz), vel = CFG.velRefem * r.civil.vel;
       if (wl > 1) { wx /= wl; wz /= wl; }
       r.vel.x = wx * vel; r.vel.z = wz * vel; r.vel.y -= 20 * dt;
-      const yAntes = r.pos.y;
-      let res = null; try { res = G.physics.moveCapsule(r.pos, r.vel, dt, 0.3, 1.7 * r.civil.escala, r.noChao); } catch {}
-      r.noChao = !res || !!res.onGround;
-      try {                                             // não atravessa piso fino (plataforma, degraus) ao cair
+      const yAntes = r.pos.y, naEscada = escadaEm(r.pos, 0.8), pendurado = !!naEscada && r.pos.y > naEscada.y0 + 0.2;
+      if (subir) {                                      // sobe ou desce a escada de mão atrás de quem segue
+        const dy = subir.y - r.pos.y, q = Math.min(1, 6 * dt);
+        r.pos.x += (subir.e.x - r.pos.x) * q; r.pos.z += (subir.e.z - r.pos.z) * q; r.pos.y += Math.sign(dy) * Math.min(Math.abs(dy), 3 * dt);
+        r.vel.set(0, 0, 0); r.noChao = true;
+      } else {
+        if (pendurado) r.vel.y = 0;                     // em cima do buraco da escada ele não cai
+        let res = null; try { res = G.physics.moveCapsule(r.pos, r.vel, dt, 0.3, noDuto(r.pos) ? 1.1 : 1.7 * r.civil.escala, r.noChao); } catch {}
+        r.noChao = !res || !!res.onGround;
+        if (pendurado && r.pos.y < yAntes) { r.pos.y = yAntes; r.noChao = true; }
+      }
+      if (!subir)
+      try {                                           // não atravessa piso fino (plataforma, degraus) ao cair
         const piso = G.physics.groundHeight(r.pos.x, r.pos.z, yAntes + 0.35);
         if (r.pos.y < piso && yAntes >= piso - 0.35) { r.pos.y = piso; r.noChao = true; }
       } catch {}
@@ -1305,7 +1356,8 @@
     parede(S.x0, S.chao, S.z1 - 0.1, S.porta[0], S.teto, S.z1);              // frente, à esquerda da porta
     parede(S.porta[1], S.chao, S.z1 - 0.1, S.x1, S.teto, S.z1);              // frente, à direita
     parede(S.porta[0], S.altoPorta, S.z1 - 0.1, S.porta[1], S.teto, S.z1);   // acima da porta
-    parede(S.x0, S.teto - 0.1, S.z0, S.x1, S.teto, S.z1);                    // teto
+    const A = ALCAPAO;                                                        // teto, com a abertura da escada de mão
+    parede(S.x0, S.teto - 0.1, S.z0, S.x1, S.teto, A[1]); parede(S.x0, S.teto - 0.1, A[1], A[0], S.teto, S.z1); parede(A[0], S.teto - 0.1, A[3], S.x1, S.teto, S.z1);
     fecharVao(true);
     let mesaCortada = false;
     const identidade = new T.Matrix4();
@@ -1316,6 +1368,13 @@
       for (let c = 0; c < pos.count; c += 24) {             // a geometria é feita de caixas de 24 vértices
         let ax = 1e9, bx = -1e9, ay = 1e9, by = -1e9, az = 1e9, bz = -1e9;
         for (let i = c; i < c + 24; i++) { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i); ax = Math.min(ax, x); bx = Math.max(bx, x); ay = Math.min(ay, y); by = Math.max(by, y); az = Math.min(az, z); bz = Math.max(bz, z); }
+        if (nome === "paint_white" && Math.abs(ay - (S.teto - 0.1)) < 0.06 && bx - ax > 5 && bz - az > 3.5) {      // laje do teto: abre o alçapão
+          for (let i = c; i < c + 24; i++) if (pos.getZ(i) > A[1]) pos.setZ(i, A[1]);
+          pos.needsUpdate = true;
+          const resto = new T.Mesh(new T.BoxGeometry(A[0] - ax, by - ay, bz - A[1]), o.material);
+          resto.position.set((ax + A[0]) / 2, (ay + by) / 2, (A[1] + bz) / 2); resto.receiveShadow = true; G.scene.add(resto);
+          continue;
+        }
         if (nome === "wood_dark") {             // a mesa ia de parede a parede, na frente das portas secretas: fica só o meio
           if (ax < S.x0 + 0.6 && bx > S.x1 - 0.6 && az > S.z0 && bz < S.z0 + 1.3 && ay > S.chao && by < S.chao + 1) {
             for (let i = c; i < c + 24; i++) { const x = pos.getX(i); if (x < MESA[0]) pos.setX(i, MESA[0]); else if (x > MESA[1]) pos.setX(i, MESA[1]); }
@@ -1337,6 +1396,7 @@
     // a mesa passa a ser sólida, para ninguém (nem os reféns) atravessar
     if (mesaCortada) parede(MESA[0], S.chao, S.z0, MESA[1], S.chao + 0.78, MESA[2]); else parede(S.x0, S.chao, S.z0, S.x1, S.chao + 0.78, MESA[2]);
     pesMesa.visible = mesaCortada;
+    montarDuto();
   }
   function fecharVao(fechar) {
     const fis = G.physics, S = SALA;
@@ -1406,12 +1466,174 @@
     G.scene.add(cenario);
     explosivos = new T.Group(); explosivos.visible = false; G.scene.add(explosivos);
     armasGrupo = new T.Group(); armasGrupo.visible = false; G.scene.add(armasGrupo);
+    pichacoes = new T.Group(); G.scene.add(pichacoes);
     nomeArmaOriginal = G.weapon.name;
     montarModelos();
     mp.refens = REFENS.map((_, i) => ({ i, pos: new V3(), cur: new V3(), vel: new V3(), estado: 0, lider: null, hp: 1, yaw: Math.PI / 2, casa: new V3(REFENS[i][0], SALA.chao, REFENS[i][1]), trilha: [],
       civil: CIVIS[i % CIVIS.length], boneco: criarBoneco({ armado: false, civil: CIVIS[i % CIVIS.length] }) }));
     zerarRefens();
   }
+
+  /* ------------------------------------------------ duto de ar e escadas de mão */
+  function escadaEm(pos, raio) {
+    for (const e of ESCADAS) if (Math.hypot(pos.x - e.x, pos.z - e.z) < (raio || 0.5) && pos.y > e.y0 - 0.1 && pos.y < e.y1 + 0.25) return e;
+    return null;
+  }
+  function noMeioDaEscada(pos) { const e = escadaEm(pos, 0.8); return !!e && pos.y > e.y0 + 0.2 && pos.y < e.y1 - 0.05; }
+  function noDuto(pos) {
+    for (const d of DEITAR) if (pos.x > d[0] && pos.x < d[2] && pos.z > d[1] && pos.z < d[3] && pos.y > d[4] && pos.y < d[5]) return true;
+    return false;
+  }
+  // Monta o duto (chapas com colisão: quem está fora não vê nem acerta quem está dentro), os poços que sobem ao telhado
+  // e todas as escadas de mão, com os materiais do próprio jogo. Chamado uma vez, junto com a sala.
+  function montarDuto() {
+    const T = G.THREE, fis = G.physics, D = DUTO, e = 0.05, y0 = D.y, y1 = D.y + D.alt, g = new T.Group(); cenario.add(g);
+    const chapa = G.mats.get("steel_galv"), escuro = G.mats.get("steel_dark"), amarelo = G.mats.get("paint_yellow"), listra = G.mats.get("hazard_stripes");
+    const luz = new T.MeshBasicMaterial({ color: 0xfff0c8, toneMapped: false });
+    const bloco = (mat, xa, ya, za, xb, yb, zb, solido) => {
+      const m = new T.Mesh(new T.BoxGeometry(Math.abs(xb - xa), Math.abs(yb - ya), Math.abs(zb - za)), mat);
+      m.position.set((xa + xb) / 2, (ya + yb) / 2, (za + zb) / 2); m.receiveShadow = true; g.add(m);
+      if (solido) fis.addBox([xa, ya, za], [xb, yb, zb], { surface: "metal" });
+      return m;
+    };
+    const zn0 = D.zn - 0.5, zn1 = D.zn + 0.5, zs0 = D.zs - 0.5, zs1 = D.zs + 0.5, xe0 = D.xe - 0.5, xe1 = D.xe + 0.5, xw0 = D.xw - 0.5, xw1 = D.xw + 0.5;
+    const piso = (xa, za, xb, zb) => bloco(chapa, xa, y0 - e, za, xb, y0, zb, true), forro = (xa, za, xb, zb) => bloco(chapa, xa, y1, za, xb, y1 + e, zb, true);
+    const lado = (xa, za, xb, zb, yb) => bloco(chapa, xa, y0 - e, za, xb, yb || y1 + e, zb, true);
+    // trecho norte: da boca (beira leste do teto da sala) até o canto nordeste, onde sobe o poço do telhado
+    piso(D.x0, zn0, xe1, zn1); forro(D.x0, zn0, xe0, zn1);
+    lado(D.x0, zn0 - e, xe1 + e, zn0); lado(D.x0, zn1, xe0, zn1 + e); lado(xe1, zn0, xe1 + e, zn1);
+    // trecho leste, com o buraco da escada que desce ao chão
+    piso(xe0, zn1, xe1, -19.7); piso(xe0, -18.7, xe1, zs0); forro(xe0, zn1, xe1, zs0);
+    lado(xe0 - e, zn1, xe0, zs0); lado(xe1, zn1, xe1 + e, zs0);
+    // trecho sul, com o poço do telhado no meio
+    piso(xw0, zs0, xe1, zs1); forro(xw0, zs0, -0.35, zs1); forro(0.65, zs0, xe1, zs1);
+    lado(xw0 - e, zs1, xe1 + e, zs1 + e); lado(xw1, zs0 - e, xe0, zs0); lado(xe1, zs0, xe1 + e, zs1); lado(xw0 - e, zs0, xw0, zs1);
+    // trecho oeste: do canto sudoeste até a boca na beira sul do teto da sala, com a outra escada que desce
+    piso(xw0, D.zb, xw1, -17); piso(xw0, -16, xw1, zs0); forro(xw0, D.zb, xw1, zs0);
+    lado(xw0 - e, D.zb, xw0, zs0); lado(xw1, D.zb, xw1 + e, zs0);
+    // poços até o telhado (as aberturas que o telhado já tem)
+    for (const [cx, cz] of [[D.xe, D.zn], [0.15, D.zs]]) {
+      bloco(chapa, cx - 0.5 - e, y1, cz - 0.5 - e, cx - 0.5, 8.3, cz + 0.5 + e, true); bloco(chapa, cx + 0.5, y1, cz - 0.5 - e, cx + 0.5 + e, 8.3, cz + 0.5 + e, true);
+      bloco(chapa, cx - 0.5, y1, cz - 0.5 - e, cx + 0.5, 8.3, cz - 0.5, true); bloco(chapa, cx - 0.5, y1, cz + 0.5, cx + 0.5, 8.3, cz + 0.5 + e, true);
+    }
+    // acabamento: flanges a cada dois metros, tirantes até o telhado, luzinhas por dentro e moldura listrada nas bocas
+    const flange = (eixo, p, a, b) => {
+      const f = 0.035, q = 0.03;
+      if (eixo === "x") { bloco(escuro, p - q, y1 + e, a - e - f, p + q, y1 + e + f, b + e + f); bloco(escuro, p - q, y0 - e - f, a - e - f, p + q, y0 - e, b + e + f); bloco(escuro, p - q, y0 - e, a - e - f, p + q, y1 + e, a - e); bloco(escuro, p - q, y0 - e, b + e, p + q, y1 + e, b + e + f); bloco(escuro, p - 0.012, y1 + e, (a + b) / 2 - 0.012, p + 0.012, 7.6, (a + b) / 2 + 0.012); bloco(luz, p + 0.9, y1 - 0.02, (a + b) / 2 - 0.04, p + 1.15, y1, (a + b) / 2 + 0.04); }
+      else { bloco(escuro, a - e - f, y1 + e, p - q, b + e + f, y1 + e + f, p + q); bloco(escuro, a - e - f, y0 - e - f, p - q, b + e + f, y0 - e, p + q); bloco(escuro, a - e - f, y0 - e, p - q, a - e, y1 + e, p + q); bloco(escuro, b + e, y0 - e, p - q, b + e + f, y1 + e, p + q); bloco(escuro, (a + b) / 2 - 0.012, y1 + e, p - 0.012, (a + b) / 2 + 0.012, 7.6, p + 0.012); bloco(luz, (a + b) / 2 - 0.04, y1 - 0.02, p + 0.9, (a + b) / 2 + 0.04, y1, p + 1.15); }
+    };
+    for (let x = D.x0 + 1; x < xe0 - 0.6; x += 2) flange("x", x, zn0, zn1);
+    for (let x = xw1 + 0.7; x < xe0; x += 2) if (Math.abs(x - 0.15) > 0.8) flange("x", x, zs0, zs1);
+    for (let z = zn1 + 1; z < zs0; z += 2) flange("z", z, xe0, xe1);
+    for (let z = D.zb + 1; z < zs0; z += 2) flange("z", z, xw0, xw1);
+    bloco(listra, D.x0 - 0.02, y0 - e, zn0 - e, D.x0 + 0.04, y1 + e + 0.06, zn0 - e + 0.07); bloco(listra, D.x0 - 0.02, y0 - e, zn1 + e - 0.07, D.x0 + 0.04, y1 + e + 0.06, zn1 + e); bloco(listra, D.x0 - 0.02, y1, zn0, D.x0 + 0.04, y1 + e + 0.06, zn1);
+    bloco(listra, xw0 - e, y0 - e, D.zb - 0.04, xw0 - e + 0.07, y1 + e + 0.06, D.zb + 0.02); bloco(listra, xw1 + e - 0.07, y0 - e, D.zb - 0.04, xw1 + e, y1 + e + 0.06, D.zb + 0.02); bloco(listra, xw0, y1, D.zb - 0.04, xw1, y1 + e + 0.06, D.zb + 0.02);
+    // escadas de mão: dois montantes amarelos e degraus de aço
+    for (const s of ESCADAS) {
+      const lx = -s.nz, lz = s.nx, cx = s.x + s.nx * s.d, cz = s.z + s.nz * s.d, topo = s.y1 + (s.curta ? -0.15 : 0.9);
+      for (const k of [-0.24, 0.24]) bloco(amarelo, cx + lx * k - 0.025, s.y0, cz + lz * k - 0.025, cx + lx * k + 0.025, topo, cz + lz * k + 0.025);
+      for (let y = s.y0 + 0.3; y < s.y1 - 0.05; y += 0.3) bloco(chapa, cx - Math.abs(lx) * 0.24 - 0.015, y - 0.015, cz - Math.abs(lz) * 0.24 - 0.015, cx + Math.abs(lx) * 0.24 + 0.015, y + 0.015, cz + Math.abs(lz) * 0.24 + 0.015);
+      if (s.y1 - s.y0 > 6) for (let y = s.y0 + 2.4; y < s.y1 - 0.3; y += 2.4)        // nas escadas de fora, suportes até a parede
+        for (const k of [-0.24, 0.24]) bloco(escuro, cx + lx * k - 0.02 + Math.min(0, s.nx) * 0.3, y - 0.02, cz + lz * k - 0.02 + Math.min(0, s.nz) * 0.3, cx + lx * k + 0.02 + Math.max(0, s.nx) * 0.3, y + 0.02, cz + lz * k + 0.02 + Math.max(0, s.nz) * 0.3);
+      if (s.y1 - s.y0 > 6) {                          // no topo das escadas de fora, guarda-corpo atrás de quem desce (para não passar direto)
+        const bx = s.x - s.nx * 0.47, bz = s.z - s.nz * 0.47, ax = Math.abs(lx) * 0.45 + 0.02, az = Math.abs(lz) * 0.45 + 0.02;
+        fis.addBox([bx - ax, s.y1 - 1.3, bz - az], [bx + ax, s.y1 + 1.1, bz + az], { surface: "metal", playerOnly: true });
+        for (const y of [s.y1 - 1.2, s.y1 - 0.5, s.y1 + 0.2, s.y1 + 0.9]) {
+          bloco(amarelo, bx - ax, y - 0.02, bz - az, bx + ax, y + 0.02, bz + az);
+          for (const k of [-0.45, 0.45]) bloco(amarelo, Math.min(bx, cx) + lx * k - 0.02, y - 0.02, Math.min(bz, cz) + lz * k - 0.02, Math.max(bx, cx) + lx * k + 0.02, y + 0.02, Math.max(bz, cz) + lz * k + 0.02);
+        }
+      }
+    }
+  }
+  // degraus e passarelas de grade: param a pessoa mas deixam o tiro passar (só no multiplayer)
+  function gradesVazadas(sim) {
+    if (!mp.grades) {
+      const cx = G.physics.boxes, degrau = b => b.min.y === 0 && b.max.y <= 3.2 && (Math.abs(b.max.x - b.min.x - 0.2) < 0.02 || Math.abs(b.max.z - b.min.z - 0.2) < 0.02);
+      const vizinho = b => cx.some(o => o !== b && degrau(o) && Math.abs(Math.abs(o.max.y - b.max.y) - 0.2) < 0.02 && Math.abs(o.min.x - b.min.x) < 0.25 && Math.abs(o.min.z - b.min.z) < 0.25);
+      mp.grades = cx.filter(b => !b.playerOnly && !b.bulletOnly && ((degrau(b) && vizinho(b)) ||
+        (b.min.x > -12.8 && b.max.x < -9.1 && b.min.z > -23.8 && b.max.z < -22.5 && b.min.y > 2.3 && b.max.y < 3.7)));
+    }
+    for (const b of mp.grades) b.playerOnly = sim;
+  }
+  // todo quadro, antes do jogo mover o jogador: correr no C, rastejar no duto, subir e descer escada de mão, dano de queda
+  function movimentoEspecial(dt) {
+    const p = G.player, t = p.tuning, inp = G.input;
+    if (!p.alive || !p.enabled) { mp.naEscada = null; mp.deitado = false; mp.quedaTopo = p.pos.y; return; }
+    const deitar = noDuto(p.pos);
+    inp.crouch = mp.ctrl || deitar;                      // no multiplayer o C corre; agachar fica no Ctrl
+    if (deitar) inp.sprint = false; else if (mp.correr) inp.sprint = true;
+    t.crouch = deitar ? 2.3 : 1.9;                        // rastejando (para o jogo é agachado, com a câmera baixa; os outros veem a pessoa deitada)
+    mp.deitado = deitar;
+    let e = escadaEm(p.pos);
+    const sobe = inp.move.y;
+    if (e && p.onGround && p.pos.y < e.y0 + 0.15 && !(sobe > 0.3 && p.forward.x * e.nx + p.forward.z * e.nz > 0.3)) e = null;   // no chão, só sobe quem vai de frente para ela
+    const querDescer = sobe * (p.pitch > -0.5 ? 1 : -1) < -0.3;
+    if (e && p.onGround && p.pos.y > e.y1 - 0.3 && !querDescer && Math.hypot(p.pos.x - e.x, p.pos.z - e.z) > 0.3) e = null;     // em pé na beira do topo
+    mp.naEscada = e;
+    if (e) {
+      let v = sobe * (p.pitch > -0.5 ? 1 : -1) * 3.2;    // W sobe; olhando para baixo, W desce (S faz o contrário)
+      if ((v > 0 && p.pos.y >= e.y1) || (v < 0 && p.pos.y <= e.y0 + 0.02)) v = 0;
+      p.vel.y = v + t.gravity * dt * 0.5;
+      if (p.pos.y > e.y0 + 0.3 && (p.pos.y < e.y1 - 0.2 || querDescer)) {         // no meio da escada (ou começando a descer) fica preso ao eixo dela
+        const q = Math.min(1, 8 * dt); p.vel.x = 0; p.vel.z = 0;
+        p.pos.x += (e.x - p.pos.x) * q; p.pos.z += (e.z - p.pos.z) * q;
+      }
+      mp.quedaTopo = p.pos.y;
+      if (Math.abs(v) < 0.1) G.hud.message("Escada: W sobe · olhando para baixo, W desce", 0.3);
+    } else if (p.onGround) {
+      if (mp.quedaTopo - p.pos.y > QUEDA.altura && mp.fase === "valendo") { mp.ultimoDano = { por: "queda", t: performance.now() }; p.damage((p.maxHealth || 100) * QUEDA.dano, null); G.hud.message("Queda: metade da vida", 2.5); }
+      mp.quedaTopo = p.pos.y;
+    } else mp.quedaTopo = Math.max(mp.quedaTopo, p.pos.y);
+  }
+  window.addEventListener("keydown", ev => { if (ev.code === "KeyC") mp.correr = true; else if (ev.code === "ControlLeft" || ev.code === "ControlRight") mp.ctrl = true; });
+  window.addEventListener("keyup", ev => { if (ev.code === "KeyC") mp.correr = false; else if (ev.code === "ControlLeft" || ev.code === "ControlRight") mp.ctrl = false; });
+  window.addEventListener("blur", () => { mp.correr = false; mp.ctrl = false; });
+
+  /* ---------------------------------------------------------------- pichação */
+  // tecla P: marca a parede (ou o chão) para onde se está olhando com o desenho do time
+  let pichacoes = null; const artes = {};
+  function artePichacao(time) {
+    if (artes[time]) return artes[time];
+    const T = G.THREE, cv = document.createElement("canvas"); cv.width = cv.height = 256; const c = cv.getContext("2d");
+    c.lineJoin = c.lineCap = "round"; c.textAlign = "center"; c.textBaseline = "middle";
+    if (time === "p") {                                   // escudo com estrela
+      c.beginPath(); c.moveTo(128, 14); c.lineTo(228, 48); c.lineTo(216, 140); c.quadraticCurveTo(200, 200, 128, 236); c.quadraticCurveTo(56, 200, 40, 140); c.lineTo(28, 48); c.closePath();
+      c.fillStyle = "rgba(22,44,92,.9)"; c.fill(); c.strokeStyle = "#e8e4da"; c.lineWidth = 9; c.stroke();
+      c.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? 17 : 42; c.lineTo(128 + Math.cos(a) * r, 96 + Math.sin(a) * r); } c.closePath(); c.fillStyle = "#e8e4da"; c.fill();
+      c.font = '700 36px "Barlow Condensed", Arial, sans-serif'; c.fillText("POLÍCIA", 128, 170);
+    } else {                                              // caveira de tinta vermelha, escorrendo
+      const cor = "#c2261a"; c.strokeStyle = cor; c.fillStyle = cor;
+      c.lineWidth = 16; c.beginPath(); c.moveTo(36, 40); c.lineTo(220, 176); c.moveTo(220, 40); c.lineTo(36, 176); c.stroke();
+      c.beginPath(); c.arc(128, 96, 62, 0, 6.3); c.fill(); c.fillRect(94, 132, 68, 48);
+      c.globalCompositeOperation = "destination-out";
+      c.beginPath(); c.arc(104, 96, 17, 0, 6.3); c.arc(152, 96, 17, 0, 6.3); c.fill();
+      c.beginPath(); c.moveTo(128, 112); c.lineTo(118, 134); c.lineTo(138, 134); c.closePath(); c.fill();
+      c.lineWidth = 4; for (const x of [108, 121, 135, 148]) { c.beginPath(); c.moveTo(x, 150); c.lineTo(x, 180); c.stroke(); }
+      c.globalCompositeOperation = "source-over"; c.lineWidth = 5;
+      for (const [x, y, h] of [[78, 150, 34], [168, 146, 46], [128, 182, 22]]) { c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + h); c.stroke(); }
+      c.font = '900 40px "Big Shoulders Display", Impact, sans-serif'; c.fillText("TERROR", 128, 228);
+    }
+    const tex = new T.CanvasTexture(cv); if (T.SRGBColorSpace) tex.colorSpace = T.SRGBColorSpace;
+    return artes[time] = new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
+  }
+  function porPichacao(m) {
+    if (!emRodada() || !TIMES[m.time]) return;
+    const T = G.THREE, n = new V3().fromArray(m.n).normalize(), malha = new T.Mesh(pichacoes.userData.geo || (pichacoes.userData.geo = new T.PlaneGeometry(1, 1)), artePichacao(m.time));
+    malha.quaternion.setFromUnitVectors(new V3(0, 0, 1), n);
+    if (Math.abs(n.y) > 0.9) malha.rotateZ(Math.random() * 6.283); else malha.rotateZ((Math.random() - 0.5) * 0.3);
+    malha.position.fromArray(m.p).addScaledVector(n, 0.02);
+    pichacoes.add(malha);
+    while (pichacoes.children.length > 24) pichacoes.remove(pichacoes.children[0]);      // as mais antigas somem
+    tocar("reload_magout", { pos: malha.position, gain: 0.5 });
+  }
+  function limparPichacoes() { if (pichacoes) while (pichacoes.children.length) pichacoes.remove(pichacoes.children[0]); }
+  window.addEventListener("keydown", ev => {
+    if (ev.code !== "KeyP" || ev.repeat || !emRodada() || mp.fase !== "valendo" || !G.player.alive || mp.picharT > 0 || (tela && !tela.hidden)) return;
+    const p = G.player; let h = null; try { h = G.physics.raycast(p.eye, p.forward, 3.5); } catch {}
+    if (!h || !h.normal) return G.hud.message("Chegue perto de uma parede para pichar", 1.5);
+    mp.picharT = 2;
+    enviar({ t: "pichar", p: arr(h.point), n: arr(h.normal) });
+  });
 
   /* --------------------------------------------------------------- explosivos */
   const NOMES_ITEM = { granada: "Granada", bomba: "Bomba", relogio: "Bomba-relógio", colete: "Colete", capacete: "Capacete" };
@@ -1660,6 +1882,7 @@
       else { if (gatilho && !mp.gatilhoAntes && mp.rajada <= 0) mp.rajada = a.rajada; pode = mp.rajada > 0; }
     }
     if (a && a.faca && vale && gatilho && !mp.gatilhoAntes && mp.cadT <= 0) { mp.cadT = FACA.espera; facada(); }
+    if (G.input.sprint && G.input.move.y > 0.55) pode = false;        // correndo a arma abaixa: não atira
     mp.gatilhoAntes = gatilho; G.input.fire = pode;
     if (a && !a.faca) { if (w.ammo > a.pente) w.ammo = a.pente; w.reserve = 150; }       // munição infinita: R sempre recarrega
     w.name = a ? a.nome : "Sem arma";
@@ -1839,6 +2062,8 @@
       }
       if (mp.fase === "valendo" && !mp.anfitriao) mp.tempo -= dt;
       if (j) { j.vivo = p.alive && j.vivo; j.pos.copy(p.pos); j.cur.copy(p.pos); j.yaw = p.yaw; j.pitch = p.pitch; j.agachado = p.crouching; }
+      mp.picharT -= dt;
+      movimentoEspecial(dt);
       armasLocais(dt);
       if (pertoDaPorta()) { G.hud.setPrompt(null); portas(dt); }       // colado na porta, ela tem prioridade sobre o refém
       else if (!interagir(dt)) portas(dt);
