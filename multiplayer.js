@@ -24,7 +24,9 @@
     velRefem: 3.6,             // metros por segundo
     maxJogadores: 10,
     danoCabeca: 2,             // multiplicador de tiro na cabeça
-    // explosivos: só os Terroristas pegam e usam; ficam espalhados em pontos sorteados a cada rodada
+    // explosivos: qualquer jogador pega e usa; ficam espalhados pelo mapa, longe uns dos outros, em pontos sorteados a cada rodada
+    // coletes e capacetes: o dobro do número de jogadores de cada um. O colete segura metade de um tiro no corpo e o capacete
+    // transforma um tiro na cabeça (que mataria) em metade da vida; os dois se perdem ao segurar o tiro.
     itens: { granada: 6, bomba: 3, relogio: 2 },                   // quantos de cada por rodada
     granada: { dano: 110, raio: 7, pavio: 2.5, forca: 17 },        // tecla G
     bomba:   { dano: 330, raio: 11, pavio: 30 },                   // tecla B · 3x a granada · pode ser desarmada
@@ -58,12 +60,13 @@
   const POLICIAIS_NA_SALA = [[-11.1, -25.2], [-11.1, -26.6]];      // os dois primeiros Policiais já começam com os reféns
   const NASCER_TERRORISTAS = [[27.4, 11.6], [20.9, 14.7], [23.4, 23.2], [18, 24.4], [27.2, -12.6], [29, 14], [27, 8], [18, 22.2]];   // espalhados no lado leste (cais)
   // posições no mapa [x, z]. O galpão (sala dos reféns) vai de x -16 a 12 e de z -28 a -11.
-  const REFENS = [[-14.3, -26.0], [-13.1, -26.3], [-12.0, -25.9]];      // dentro da sala
+  const REFENS = [[-14.5, -25.9], [-13.5, -26.1], [-13.2, -25.2]];      // dentro da sala, longe da mesa e do cabide de armas
+  const MESA = [-13.9, -12.1, -26.68];                                  // mesa encostada na parede norte: x de, x até, z da frente
   // quem são os reféns, na ordem das posições acima: cor da roupa, cabelo, tamanho e ritmo de caminhada
   const CIVIS = [
-    { quem: "mulher",  camisa: 0x8c2f4f, calca: 0x232b3a, cabelo: 0x2e1a10, pele: 0xc08a68, cabeloLongo: true, escala: 0.95, vel: 1 },
-    { quem: "criança", camisa: 0xc79a1e, calca: 0x2f4f7a, cabelo: 0x23160e, pele: 0xc69472, bermuda: true, mangaCurta: true, escala: 0.7, vel: 0.9 },
-    { quem: "idoso",   camisa: 0x4d5a66, calca: 0x38332d, cabelo: 0xc9c9c9, pele: 0xb88768, curvado: true, bigode: true, escala: 0.92, vel: 0.75 },
+    { quem: "mulher",  camisa: 0x8c2f4f, calca: 0x232b3a, cabelo: 0x2e1a10, pele: 0xc08a68, cabeloLongo: true, sapato: 0x3a2a22, escala: 0.95, vel: 1 },
+    { quem: "criança", camisa: 0xc79a1e, calca: 0x2f4f7a, cabelo: 0x23160e, pele: 0xc69472, bermuda: true, mangaCurta: true, franja: true, listra: 0xf2efe8, sapato: 0xd8d4c8, cabecaEscala: 1.16, senta: true, escala: 0.7, vel: 0.9 },
+    { quem: "idoso",   camisa: 0x4d5a66, calca: 0x38332d, cabelo: 0xc9c9c9, pele: 0xb88768, curvado: true, bigode: true, careca: true, oculos: true, senta: true, escala: 0.92, vel: 0.75 },
   ];
   // pontos de resgate: um é sorteado a cada rodada e só os Policiais ficam sabendo qual
   // [x, z, nome que aparece no painel da sala dos reféns]. No mapa, norte é -z e oeste é -x.
@@ -97,8 +100,8 @@
   const DANO_CHUMBO = 13;      // cada bago da 12 (ela solta vários de uma vez, mas só alcança de perto)
   // roupas dos jogadores: farda, colete, faixa na cor do time (para reconhecer de longe) e o que vai na cabeça
   const ROUPAS = {
-    p: { camisa: 0x1c2a44, calca: 0x161d2c, colete: 0x0e1218, faixa: 0x4aa3ff, pele: 0xb98a6b, cabeca: "capacete" },
-    t: { camisa: 0x34352a, calca: 0x23241d, colete: 0x2a2118, faixa: 0xff5a40, pele: 0xb98a6b, cabeca: "balaclava" },
+    p: { camisa: 0x24365a, calca: 0x1a2236, colete: 0x10151d, faixa: 0x4aa3ff, pele: 0xb98a6b, cabeca: "bone" },
+    t: { camisa: 0x5a5a3c, calca: 0x47442f, colete: 0x3a2c1e, faixa: 0xff5a40, pele: 0xb98a6b, cabeca: "balaclava", estampa: "camuflagem" },
   };
   const CHAVE_PERFIL = "saltline.perfil.v1";
   const ESTADOS = ["preso", "seguindo", "salvo", "morto"];
@@ -120,6 +123,7 @@
     bombas: new Map(),        // bombas armadas: id -> { id, tipo, pos, t, por, malha, bipe }
     granadas: [],             // granadas no ar: { pos, vel, t, por, malha }
     bolsa: { granada: 0, bomba: 0, relogio: 0 }, tempoIdx: 1, desarmarT: 0, proxId: 1,
+    colete: false, capacete: false,     // proteção que eu estou usando
     arma: null,               // chave em ARMAS da arma na mão, ou null
     armasChao: new Map(),     // id -> { id, arma, pos, malha, pedido }
     cadT: 0, rajada: 0, gatilhoAntes: false, semPegarT: 0, armaVisivel: null, passoT: 0,
@@ -229,7 +233,7 @@
         break;
       case "estado":
         if (id !== mp.meuId) { j.pos.fromArray(m.p); j.yaw = m.y; j.pitch = m.x; j.agachado = !!m.c; }
-        j.vivo = !!m.v;
+        j.vivo = !!m.v; j.armadura = m.a | 0;
         break;
       case "tiro":
         paraTodos({ t: "tiro", id, o: m.o, e: m.e }, id);
@@ -238,7 +242,7 @@
       case "acerto": {
         const alvo = mp.jogadores.get(m.em);
         if (mp.fase === "valendo" && alvo && alvo.vivo && j.vivo && alvo.time !== j.time)
-          paraUm(alvo.id, { t: "dano", q: Math.min(600, +m.q || 0), de: m.de, por: id });
+          paraUm(alvo.id, { t: "dano", q: Math.min(600, +m.q || 0), de: m.de, por: id, c: m.c === 1 ? 1 : m.c === 0 ? 0 : undefined });
         break;
       }
       case "acertoRefem":
@@ -258,21 +262,21 @@
         break;
       case "pegueiItem": {
         const it = mp.itens.get(m.id);
-        if (mp.fase === "valendo" && it && j.time === "t" && j.vivo) paraTodos({ t: "item", id: m.id, por: id });
+        if (mp.fase === "valendo" && it && j.vivo) paraTodos({ t: "item", id: m.id, por: id });
         break;
       }
       case "granada":
-        if (mp.fase === "valendo" && j.time === "t" && j.vivo) paraTodos({ t: "granada", o: m.o, v: m.v, por: id });
+        if (mp.fase === "valendo" && j.vivo) paraTodos({ t: "granada", o: m.o, v: m.v, por: id });
         break;
       case "plantar": {
-        if (mp.fase !== "valendo" || j.time !== "t" || !j.vivo || (m.tipo !== "bomba" && m.tipo !== "relogio")) break;
+        if (mp.fase !== "valendo" || !j.vivo || (m.tipo !== "bomba" && m.tipo !== "relogio")) break;
         const tempo = m.tipo === "bomba" ? CFG.bomba.pavio : Math.max(5, Math.min(120, +m.tempo || 30));
         paraTodos({ t: "bomba", id: mp.proxId++, tipo: m.tipo, p: m.p, tempo, por: id });
         break;
       }
       case "desarmei": {
         const b = mp.bombas.get(m.id);
-        if (mp.fase === "valendo" && b && j.time === "p" && j.vivo) paraTodos({ t: "bombaFora", id: m.id, ev: "desarmada", por: id });
+        if (mp.fase === "valendo" && b && j.vivo) paraTodos({ t: "bombaFora", id: m.id, ev: "desarmada", por: id });
         break;
       }
       case "pegar": {
@@ -334,7 +338,7 @@
         for (const d of m.j) {
           const j = mp.jogadores.get(d[0]);
           if (!j || j.id === mp.meuId) continue;
-          j.pos.set(d[1], d[2], d[3]); j.yaw = d[4]; j.pitch = d[5]; j.agachado = !!d[6]; j.vivo = !!d[7];
+          j.pos.set(d[1], d[2], d[3]); j.yaw = d[4]; j.pitch = d[5]; j.agachado = !!d[6]; j.vivo = !!d[7]; j.armadura = d[8] | 0;
         }
         m.r.forEach((d, i) => { const r = mp.refens[i]; if (r) { r.pos.set(d[0], d[1], d[2]); r.estado = d[3]; r.lider = d[4]; } });
         sincronizarMarionetes(m.m);
@@ -348,7 +352,12 @@
       case "dano":
         if (emRodada() && G.player.alive) {
           mp.ultimoDano = { por: m.por, t: performance.now() };
-          G.player.damage(m.q, m.de ? new V3().fromArray(m.de) : null);
+          let q = m.q;
+          if (m.c === 1) {                       // tiro na cabeça: mata, a não ser que o capacete segure (aí tira metade da vida)
+            if (mp.capacete) { mp.capacete = false; q = (G.player.maxHealth || 100) * 0.5; G.hud.message("O capacete segurou o tiro · você perdeu o capacete", 3); }
+            else q = 999;
+          } else if (m.c === 0 && mp.colete) { mp.colete = false; q *= 0.5; G.hud.message("O colete segurou metade do tiro · você perdeu o colete", 3); }
+          G.player.damage(q, m.de ? new V3().fromArray(m.de) : null);
         }
         break;
       case "baixa": {
@@ -371,12 +380,14 @@
         const it = mp.armasChao.get(m.id);
         if (!it) break;
         tirarArmaDoChao(m.id);
+        { const q = mp.jogadores.get(m.por); if (q) q.arma = it.arma; }
         if (m.por === mp.meuId && !mp.arma) { mp.arma = it.arma; mp.rajada = 0; mp.cadT = 0.3; try { G.weapon.reset(); } catch {} tocar("reload_magin"); G.hud.message(ARMAS[it.arma].nome + " · G solta", 2.5); }
         break;
       }
       case "porta": aplicarPorta(!!m.aberta); break;
       case "armaChao":
         porArmaNoChao(m.d);
+        { const q = mp.jogadores.get(m.por); if (q) q.arma = null; }
         if (m.por === mp.meuId) mp.armasChao.get(m.d[0]).espera = true;   // quem soltou só pega de novo depois de se afastar
         break;
       case "passo":
@@ -386,7 +397,10 @@
         const it = mp.itens.get(m.id);
         if (!it) break;
         explosivos.remove(it.malha); explosivos.remove(it.anel); mp.itens.delete(m.id);
-        if (m.por === mp.meuId) { mp.bolsa[it.tipo]++; tocar("reload_magin"); G.hud.message("Pegou: " + NOMES_ITEM[it.tipo], 2); }
+        if (m.por === mp.meuId) {
+          if (it.tipo === "colete" || it.tipo === "capacete") mp[it.tipo] = true; else mp.bolsa[it.tipo]++;
+          tocar("reload_magin"); G.hud.message("Pegou: " + NOMES_ITEM[it.tipo], 2);
+        }
         break;
       }
       case "granada":
@@ -396,7 +410,7 @@
         const b = { id: m.id, tipo: m.tipo, pos: new V3().fromArray(m.p), t: m.tempo, por: m.por, malha: modeloExplosivo(m.tipo, 1.7), bipe: 0 };
         b.malha.position.copy(b.pos).setY(b.pos.y + 0.07);
         mp.bombas.set(m.id, b);
-        G.hud.warn(eu() && eu().time === "t" ? "Bomba armada" : "Bomba armada no mapa", 2.5); tocar("alert");
+        G.hud.warn(m.por === mp.meuId ? "Bomba armada" : "Bomba armada no mapa", 2.5); tocar("alert");
         break;
       }
       case "bombaFora": {
@@ -569,6 +583,7 @@
       r.pos.set(REFENS[i][0], SALA.chao, REFENS[i][1]); r.cur.copy(r.pos); r.vel.set(0, 0, 0); r.casa.copy(r.pos); r.trilha = [];
       r.estado = 0; r.lider = null; r.hp = dif().refem.tirosCabeca; r.jaSolto = false; r.caminho = null; r.caminhoT = 0;
       r.passoT = Math.random(); r.passo = [0, 0]; r.ladoT = 0; r.lado = 1; r.tiroT = 1.5; r.noChao = true;
+      r.yaw = -Math.PI / 2; r.miraT = 0;        // de frente para a porta e para os Policiais
     });
   }
   // só o anfitrião
@@ -621,11 +636,12 @@
     if (!mp.anfitriao) { try { G.enemies.clear(); } catch {} mp.marionetes.clear(); }
     prepararSala(); aplicarPorta(false);
     zerarRefens(); limparExplosivos(); limparArmas();
+    for (const j of mp.jogadores.values()) { j.arma = null; j.armadura = 0; }
     for (const d of m.armas || []) porArmaNoChao(d);
     for (const d of m.itens || []) {
-      const it = { id: d[0], tipo: d[1], pos: new V3(d[2], 0, d[3]), malha: modeloExplosivo(d[1], 2.2), pedido: false };
+      const it = { id: d[0], tipo: d[1], pos: new V3(d[2], 0, d[3]), malha: modeloExplosivo(d[1], d[1] === "colete" || d[1] === "capacete" ? 1.5 : 2.2), pedido: false };
       it.malha.position.set(d[2], 0.45, d[3]); mp.itens.set(it.id, it);
-      it.anel = comAnel(it.malha, CORES_ITEM[d[1]]); it.anel.position.set(d[2], 0.04, d[3]); explosivos.add(it.anel);
+      it.anel = anelNeutro(); it.anel.position.set(d[2], 0.04, d[3]); explosivos.add(it.anel);
     }
     for (const j of mp.jogadores.values()) { j.vivo = !!m.nasc[j.id]; if (m.nasc[j.id] && j.id !== mp.meuId) { j.pos.set(m.nasc[j.id][0], 0, m.nasc[j.id][2]); j.cur.copy(j.pos); } }
     const meu = m.nasc[mp.meuId], p = G.player, post = G.render.post || {};
@@ -644,7 +660,7 @@
     const t = eu() && TIMES[eu().time];
     if (t && meu) G.hud.radio("Você está com os " + t.nome + ". " + t.objetivo + ".", CFG.tempoPreparo + 1);
     else G.hud.message("Você entra na próxima rodada", 6);
-    if (meu) G.hud.message("Pegue uma arma no chão · G solta · R recarrega", CFG.tempoPreparo + 5);
+    if (meu) G.hud.message((meu[1] > 1 ? "Armas no cabide sob a janela" : "Pegue uma arma no chão") + " · G solta · R recarrega", CFG.tempoPreparo + 5);
     if (!meu) p.alive = false;
     placarEl.hidden = false;
   }
@@ -684,63 +700,163 @@
       damage(q, de) { if (mp.fase === "valendo" && j.vivo) paraUm(j.id, { t: "dano", q, de: de ? arr(de) : null, por: null }); },
       heal() {}, addShake() {}, addRecoil() {} };
   }
-  // Monta uma pessoa: pernas com joelho, tronco que inclina no quadril, braços com cotovelo, cabeça com rosto.
-  // Medidas em metros, de frente para -z. Jogadores (armado) levam colete, faixa do time e fuzil; reféns (civil), roupa comum.
+  // Monta uma pessoa: pernas com joelho, tronco com cintura, braços com cotovelo, cabeça com rosto, cabelo e roupa.
+  // Medidas em metros, de frente para -z. Jogadores (armado) levam farda, faixa do time e a arma que pegaram; o colete e o
+  // capacete só aparecem em quem está com eles. Reféns (civil) usam roupa comum e ficam de pulsos amarrados até serem soltos.
+  // texturas desenhadas na hora (trama de tecido, camuflagem, pele, cabelo), usadas como cor e como relevo
+  let texturas = null;
+  function texturasDeRoupa() {
+    if (texturas) return texturas;
+    const T = G.THREE;
+    const faz = (desenho, vezes) => {
+      const cv = document.createElement("canvas"); cv.width = cv.height = 128; const c = cv.getContext("2d"); desenho(c);
+      const d = c.getImageData(0, 0, 128, 128);                      // grão
+      for (let i = 0; i < d.data.length; i += 4) { const n = (Math.random() - 0.5) * 34; d.data[i] += n; d.data[i + 1] += n; d.data[i + 2] += n; }
+      c.putImageData(d, 0, 0);
+      const t = new T.CanvasTexture(cv); t.wrapS = t.wrapT = T.RepeatWrapping; t.repeat.set(vezes, vezes); if (T.SRGBColorSpace) t.colorSpace = T.SRGBColorSpace;
+      return t;
+    };
+    const fundo = (c, cor) => { c.fillStyle = cor; c.fillRect(0, 0, 128, 128); };
+    texturas = {
+      tecido: faz(c => { fundo(c, "#dcdcdc"); c.strokeStyle = "rgba(0,0,0,.2)"; c.lineWidth = 1; for (let i = 0; i < 128; i += 6) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, 128); c.moveTo(0, i); c.lineTo(128, i); c.stroke(); } }, 5),
+      camuflagem: faz(c => {
+        fundo(c, "#d2d2d2");
+        for (let k = 0; k < 30; k++) { c.fillStyle = ["rgba(0,0,0,.42)", "rgba(0,0,0,.22)", "rgba(255,255,255,.22)"][k % 3]; c.beginPath(); c.ellipse(Math.random() * 128, Math.random() * 128, 8 + Math.random() * 16, 5 + Math.random() * 9, Math.random() * 3, 0, 6.3); c.fill(); }
+      }, 2),
+      pele: faz(c => fundo(c, "#f2f2f2"), 2),
+      cabelo: faz(c => { fundo(c, "#e0e0e0"); c.strokeStyle = "rgba(0,0,0,.3)"; for (let i = 0; i < 128; i += 3) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i + (Math.random() - 0.5) * 6, 128); c.stroke(); } }, 2),
+    };
+    return texturas;
+  }
   function criarBoneco({ nome, css, armado, civil, time }) {
-    const T = G.THREE, grupo = new T.Group(), corpo = new T.Group(), tronco = new T.Group(), r = civil || ROUPAS[time];
-    const mat = (hex, brilho) => new T.MeshStandardMaterial({ color: hex, roughness: 0.9, metalness: 0, ...(brilho ? { emissive: hex, emissiveIntensity: 0.6 } : {}) });
-    const mCamisa = mat(r.camisa), mCalca = mat(r.calca), mPele = mat(r.pele), mEscuro = mat(0x111315), mCabelo = mat(r.cabelo || 0x111315);
+    const T = G.THREE, grupo = new T.Group(), corpo = new T.Group(), tronco = new T.Group(), r = civil || ROUPAS[time], tx = texturasDeRoupa();
+    const mat = (hex, o) => new T.MeshStandardMaterial({ color: hex, roughness: 0.85, metalness: 0, ...o });
+    const pano = (hex, estampa) => mat(hex, { map: tx[estampa || "tecido"], bumpMap: tx.tecido, bumpScale: 1.2 });
+    const mCamisa = pano(r.camisa, r.estampa), mCalca = pano(r.calca, r.estampa), mPele = mat(r.pele, { roughness: 0.62, map: tx.pele }), mEscuro = pano(0x15171a),
+      mCabelo = mat(r.cabelo || 0x1a1410, { roughness: 0.7, map: tx.cabelo, bumpMap: tx.cabelo, bumpScale: 1.5 }), mSapato = mat(r.sapato || 0x1b1b1d, { roughness: 0.5 });
     const add = (pai, geo, m, x, y, z) => { const o = new T.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; pai.add(o); return o; };
-    const capsula = (raio, comp) => new T.CapsuleGeometry(raio, comp, 4, 10);
+    const cil = (cima, baixo, alt) => new T.CylinderGeometry(cima, baixo, alt, 14), bola = raio => new T.SphereGeometry(raio, 18, 14),
+      capsula = (raio, comp) => new T.CapsuleGeometry(raio, comp, 4, 12), fem = r.quem === "mulher";
     const perna = x => {
       const coxa = new T.Group(); coxa.position.set(x, 0.92, 0); corpo.add(coxa);
-      add(coxa, capsula(0.078, 0.3), mCalca, 0, -0.22, 0);
+      add(coxa, cil(0.088, 0.066, 0.44), mCalca, 0, -0.22, 0);
       const canela = new T.Group(); canela.position.y = -0.45; coxa.add(canela);
-      add(canela, capsula(0.06, 0.3), r.bermuda ? mPele : mCalca, 0, -0.2, 0);
-      add(canela, new T.BoxGeometry(0.1, 0.07, 0.25), mEscuro, 0, -0.43, -0.045);            // sapato
+      const mCanela = r.bermuda ? mPele : mCalca;
+      add(canela, bola(0.067), armado ? mEscuro : mCanela, 0, 0, 0);                         // joelho (joelheira nos jogadores)
+      add(canela, cil(0.062, 0.046, 0.4), mCanela, 0, -0.2, 0);
+      if (r.bermuda) add(canela, cil(0.05, 0.048, 0.09), mat(0xe8e4da), 0, -0.35, 0);        // meia
+      if (armado) add(canela, cil(0.058, 0.054, 0.17), mSapato, 0, -0.32, 0);                // cano da bota
+      add(canela, bola(0.06), mSapato, 0, -0.425, -0.05).scale.set(0.85, 0.62, 2);           // pé
       return { coxa, canela };
     };
     const pernas = [perna(-0.095), perna(0.095)];
     tronco.position.y = 0.92; corpo.add(tronco);
-    add(tronco, new T.BoxGeometry(0.3, 0.16, 0.18), mCalca, 0, 0.06, 0);                    // quadril
-    add(tronco, capsula(0.14, 0.2), mCamisa, 0, 0.34, 0).scale.set(1.2, 1, 0.8);            // peito
-    add(tronco, new T.CylinderGeometry(0.045, 0.05, 0.09, 10), mPele, 0, 0.61, 0);          // pescoço
-    const cabeca = new T.Group(); cabeca.position.y = 0.73; tronco.add(cabeca);
-    const balaclava = r.cabeca === "balaclava";
-    add(cabeca, new T.SphereGeometry(0.105, 16, 12), balaclava ? mEscuro : mPele, 0, 0, 0).scale.set(0.92, 1.12, 1);
-    if (balaclava) add(cabeca, new T.BoxGeometry(0.15, 0.036, 0.03), mPele, 0, 0.014, -0.088);   // só os olhos de fora
-    for (const x of [-0.036, 0.036]) add(cabeca, new T.SphereGeometry(0.013, 6, 6), mEscuro, x, 0.014, -0.1);
-    if (r.cabeca === "capacete") add(cabeca, new T.SphereGeometry(0.122, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), mat(0x141b29), 0, 0.02, 0);
-    if (civil) {
-      add(cabeca, new T.SphereGeometry(0.112, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), mCabelo, 0, 0.022, 0.012).scale.set(0.96, 1.1, 1.04);
-      if (r.cabeloLongo) add(cabeca, capsula(0.075, 0.2), mCabelo, 0, -0.1, 0.07).scale.set(1.25, 1, 0.7);
-      if (r.bigode) add(cabeca, new T.BoxGeometry(0.07, 0.014, 0.02), mCabelo, 0, -0.045, -0.1);
+    const fatia = (m, rBaixo, rCima, y0, y1, fundo) => { const o = add(tronco, cil(rCima, rBaixo, y1 - y0), m, 0, (y0 + y1) / 2, 0); o.scale.z = fundo || 0.64; return o; };
+    fatia(mCalca, 0.15, 0.168, -0.07, 0.1, 0.68);                                            // quadril
+    if (fem) { fatia(mCamisa, 0.172, 0.132, 0.05, 0.26); fatia(mCamisa, 0.132, 0.168, 0.26, 0.48); fatia(mCamisa, 0.168, 0.07, 0.48, 0.6); }
+    else {
+      fatia(mCamisa, 0.162, 0.158, 0.08, 0.28); fatia(mCamisa, 0.158, 0.19, 0.28, 0.49); fatia(mCamisa, 0.19, 0.075, 0.49, 0.6);
+      if (!r.bermuda) fatia(mEscuro, 0.167, 0.167, 0.075, 0.11, 0.66);                       // cinto
+    }
+    if (r.listra) fatia(mat(r.listra), 0.172, 0.181, 0.36, 0.42, 0.65);                      // listra na camiseta
+    add(tronco, cil(0.046, 0.052, 0.1), mPele, 0, 0.63, 0);                                  // pescoço
+    const colete = new T.Group(); colete.visible = false; tronco.add(colete);
+    if (armado) {
+      const mColete = pano(r.colete), mBolso = pano(r.colete); mBolso.color.offsetHSL(0, 0, 0.09);
+      // equipamento que todo jogador leva: cinto com bolsos, coldre na coxa e a marca do time
+      for (const x of [-0.15, 0.15]) add(tronco, new T.BoxGeometry(0.06, 0.09, 0.1), mBolso, x, 0.06, 0);
+      add(pernas[1].coxa, new T.BoxGeometry(0.05, 0.16, 0.09), mBolso, 0.07, -0.16, 0);
+      if (time === "p") {
+        const cv = document.createElement("canvas"); cv.width = 256; cv.height = 80; const c = cv.getContext("2d");
+        c.fillStyle = "#10151d"; c.fillRect(0, 0, 256, 80); c.fillStyle = "#e8e4da"; c.textAlign = "center"; c.textBaseline = "middle";
+        c.font = '700 54px "Barlow Condensed", Arial, sans-serif'; c.fillText("POLÍCIA", 128, 44);
+        const mLetreiro = new T.MeshBasicMaterial({ map: new T.CanvasTexture(cv) }), gLetreiro = new T.PlaneGeometry(0.24, 0.075);
+        add(tronco, gLetreiro, mLetreiro, 0, 0.42, 0.124); add(colete, gLetreiro, mLetreiro, 0, 0.42, 0.151);     // nas costas, com e sem colete
+      } else {
+        const l = add(tronco, new T.TorusGeometry(0.075, 0.032, 8, 18), pano(0x8a7a52), 0, 0.6, 0.005); l.rotation.x = Math.PI / 2; l.scale.set(1.15, 1, 1);   // lenço no pescoço
+        const b = add(tronco, new T.BoxGeometry(0.07, 0.62, 0.02), pano(0x2a2118), 0, 0.33, -0.128); b.rotation.z = 0.6;                                      // bandoleira
+      }
+      add(colete, cil(0.2, 0.182, 0.36), mColete, 0, 0.35, 0).scale.z = 0.74;
+      for (const x of [-0.105, 0.105]) add(colete, new T.BoxGeometry(0.07, 0.05, 0.21), mColete, x, 0.555, 0);         // alças
+      for (const x of [-0.1, 0, 0.1]) add(colete, new T.BoxGeometry(0.08, 0.1, 0.045), mBolso, x, 0.26, -0.15);        // bolsos
+    }
+    const cabeca = new T.Group(); cabeca.position.y = 0.75; cabeca.scale.setScalar(r.cabecaEscala || 1); tronco.add(cabeca);
+    const balaclava = r.cabeca === "balaclava", mRosto = balaclava ? mEscuro : mPele, mBranco = mat(0xf2efe8, { roughness: 0.4 });
+    add(cabeca, bola(0.105), mRosto, 0, 0, 0).scale.set(0.9, 1.12, 0.98);
+    add(cabeca, bola(0.078), mRosto, 0, -0.058, -0.012).scale.set(0.95, 0.85, 1);            // queixo
+    if (balaclava) add(cabeca, new T.BoxGeometry(0.135, 0.036, 0.03), mPele, 0, 0.018, -0.08);   // só os olhos de fora
+    else {
+      add(cabeca, bola(0.016), mPele, 0, -0.01, -0.103).scale.set(0.85, 1.3, 1);             // nariz
+      for (const x of [-0.094, 0.094]) add(cabeca, bola(0.022), mPele, x, -0.002, 0.008).scale.set(0.45, 1, 0.7);     // orelhas
+      add(cabeca, new T.BoxGeometry(0.036, 0.007, 0.01), mat(0x7a3b34), 0, -0.052, -0.093);  // boca
+      for (const x of [-0.036, 0.036]) add(cabeca, new T.BoxGeometry(0.034, 0.007, 0.012), mCabelo, x, 0.044, -0.093);  // sobrancelhas
+    }
+    for (const x of [-0.036, 0.036]) { add(cabeca, bola(0.015), mBranco, x, 0.018, -0.088).scale.z = 0.6; add(cabeca, bola(0.008), mEscuro, x, 0.018, -0.095); }
+    if (!balaclava) {
+      if (r.careca) add(cabeca, new T.SphereGeometry(0.111, 18, 10, -0.15 * Math.PI, 1.3 * Math.PI, 0.22 * Math.PI, 0.36 * Math.PI), mCabelo, 0, 0, 0).scale.set(0.93, 1.12, 1);
+      else { const c = add(cabeca, new T.SphereGeometry(0.113, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.5), mCabelo, 0, 0.012, 0.012); c.scale.set(0.93, 1.12, 1.02); c.rotation.x = 0.3; }
+      if (r.franja) add(cabeca, new T.BoxGeometry(0.15, 0.03, 0.03), mCabelo, 0, 0.082, -0.08).rotation.x = -0.35;
+      if (r.cabeloLongo) {
+        add(cabeca, capsula(0.08, 0.22), mCabelo, 0, -0.11, 0.066).scale.set(1.3, 1, 0.6);
+        for (const x of [-0.093, 0.093]) add(cabeca, capsula(0.028, 0.15), mCabelo, x, -0.085, 0.02);
+      }
+      if (r.bigode) add(cabeca, new T.BoxGeometry(0.07, 0.016, 0.02), mCabelo, 0, -0.034, -0.097);
+      if (r.oculos) {
+        const mAro = mat(0x1a1a1a, { roughness: 0.3, metalness: 0.6 });
+        for (const x of [-0.036, 0.036]) add(cabeca, new T.TorusGeometry(0.021, 0.0035, 6, 18), mAro, x, 0.018, -0.1);
+        add(cabeca, new T.BoxGeometry(0.03, 0.004, 0.004), mAro, 0, 0.02, -0.1);
+      }
+    }
+    const capacete = new T.Group(), bone = new T.Group(); capacete.visible = false; cabeca.add(capacete, bone);
+    if (r.cabeca === "bone") {                 // boné do policial (some quando ele põe o capacete)
+      const mBone = pano(0x141b29);
+      add(bone, new T.SphereGeometry(0.116, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.45), mBone, 0, 0.03, 0.004).scale.set(0.95, 1, 1.04);
+      add(bone, new T.BoxGeometry(0.15, 0.012, 0.1), mBone, 0, 0.055, -0.13).rotation.x = 0.18;
     }
     if (armado) {
-      add(tronco, new T.BoxGeometry(0.37, 0.3, 0.25), mat(r.colete), 0, 0.35, 0);           // colete
+      const mCasco = mat(time === "p" ? 0x141b29 : 0x2b2d24, { roughness: 0.5, metalness: 0.2 });
+      add(capacete, new T.SphereGeometry(0.127, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.56), mCasco, 0, 0.018, 0.004).scale.set(0.96, 1.08, 1.06);
+      add(capacete, new T.BoxGeometry(0.17, 0.034, 0.02), mat(0x0a0d12, { roughness: 0.2, metalness: 0.5 }), 0, 0.07, -0.118).rotation.x = -0.25;   // óculos na testa
+      for (const x of [-0.105, 0.105]) add(capacete, new T.BoxGeometry(0.012, 0.11, 0.03), mEscuro, x, -0.05, 0);       // jugular
     }
+    const cordas = [];
     const braco = x => {
-      const ombro = new T.Group(); ombro.position.set(x, 0.5, 0); tronco.add(ombro);
-      add(ombro, capsula(0.05, 0.2), mCamisa, 0, -0.14, 0);
-      if (armado) add(ombro, new T.BoxGeometry(0.115, 0.05, 0.115), mat(r.faixa, true), 0, -0.12, 0);   // faixa do time
+      const ombro = new T.Group(); ombro.position.set(x, 0.52, 0); tronco.add(ombro);
+      add(ombro, bola(0.054), mCamisa, 0, -0.01, 0);
+      add(ombro, cil(0.054, 0.045, 0.27), mCamisa, 0, -0.145, 0);
+      if (armado) add(ombro, cil(0.058, 0.056, 0.05), mat(r.faixa, { emissive: r.faixa, emissiveIntensity: 0.6 }), 0, -0.13, 0);   // faixa do time
       const ante = new T.Group(); ante.position.y = -0.29; ombro.add(ante);
-      add(ante, capsula(0.042, 0.19), r.mangaCurta ? mPele : mCamisa, 0, -0.13, 0);
-      add(ante, new T.SphereGeometry(0.048, 8, 8), mPele, 0, -0.27, 0);                      // mão
+      const mManga = r.mangaCurta ? mPele : mCamisa;
+      add(ante, bola(0.045), mManga, 0, 0, 0);
+      add(ante, cil(0.043, 0.034, 0.23), mManga, 0, -0.125, 0);
+      add(ante, bola(0.04), armado ? mEscuro : mPele, 0, -0.272, 0).scale.set(0.85, 1.25, 0.62);                        // mão (luva nos jogadores)
+      if (civil) { const c = add(ante, new T.TorusGeometry(0.038, 0.011, 6, 14), mat(0xb9a070), 0, -0.225, 0); c.rotation.x = Math.PI / 2; cordas.push(c); }
       return { ombro, ante };
     };
-    const bracos = [braco(-0.21), braco(0.21)];
-    // arma na mão direita: com o braço estendido, o lado "-y" do antebraço aponta para a frente
-    const arma = new T.Group(), mArma = new T.MeshStandardMaterial({ color: 0x0e1012, roughness: 0.5, metalness: 0.6 });
-    if (armado) { add(arma, new T.BoxGeometry(0.05, 0.6, 0.075), mArma, -0.04, -0.3, 0.02); add(arma, new T.BoxGeometry(0.035, 0.05, 0.16), mArma, -0.04, -0.16, 0.1); }
-    else { add(arma, new T.BoxGeometry(0.03, 0.17, 0.045), mArma, 0, -0.33, 0.01); arma.visible = false; }
-    bracos[1].ante.add(arma);
+    const largo = fem ? 0.195 : 0.215, bracos = [braco(-largo), braco(largo)];
+    const arma = new T.Group(); bracos[1].ante.add(arma);          // o que vai na mão direita (ver armarBoneco)
     grupo.add(corpo);
     let placa = null;
     if (armado) { placa = criarPlaca(nome, css); placa.position.y = 2.05; grupo.add(placa); }
     if (civil) grupo.scale.setScalar(civil.escala);
     grupo.visible = false;
     G.scene.add(grupo);
-    return { grupo, corpo, tronco, pernas, bracos, placa, arma, curvado: !!r.curvado, ult: new V3(), andar: 0, fase: 0 };
+    const b = { grupo, corpo, tronco, pernas, bracos, placa, arma, colete, capacete, bone, cordas, armaChave: null, curvado: !!r.curvado, ult: new V3(), andar: 0, fase: 0 };
+    if (civil) { armarBoneco(b, "p_pistola"); arma.visible = false; }
+    return b;
+  }
+  // põe na mão do boneco a mesma arma que o jogador carrega (cópia do modelo do jogo). Com o braço estendido,
+  // o lado "-y" do antebraço aponta para a frente e o "-z" para cima.
+  function armarBoneco(b, chave) {
+    chave = chave && ARMAS[chave] ? chave : null;
+    if (b.armaChave === chave) return;
+    b.armaChave = chave;
+    while (b.arma.children.length) b.arma.remove(b.arma.children[0]);
+    if (!chave) return;
+    const c = copiaDaArma(chave);
+    c.rotation.x = -Math.PI / 2;
+    if (ARMAS[chave].faca) { c.scale.setScalar(1.4); c.position.set(0, -0.3, 0); } else c.position.set(-0.02, -0.35, -0.1);
+    b.arma.add(c);
   }
   function criarPlaca(texto, css, grande) {
     const T = G.THREE, cv = document.createElement("canvas"); cv.width = 256; cv.height = 64;
@@ -753,36 +869,39 @@
   function removerBoneco(j) {
     if (!j.boneco) return;
     G.scene.remove(j.boneco.grupo);
-    j.boneco.grupo.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+    j.boneco.grupo.traverse(o => { if (o.userData.emprestado) return; if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
     j.boneco = null;
   }
-  // Coloca o boneco no lugar e anima: passada conforme o quanto andou, pose dos braços, agachado e caído.
-  // pose: "arma" (fuzil nas duas mãos), "preso" (mãos amarradas à frente) ou "pistola" (braço direito estendido).
+  // Coloca o boneco no lugar e anima: passada conforme o quanto andou, pose dos braços, agachado, sentado e caído.
+  // pose: "arma" (arma longa nas duas mãos), "pistola" (braço direito estendido), "solto" (braços ao longo do corpo)
+  // ou "preso" (pulsos amarrados à frente).
   function posar(b, cur, yaw, k, dt, o) {
-    const vel = dt > 0 ? Math.hypot(cur.x - b.ult.x, cur.z - b.ult.z) / dt : 0;
+    const vel = dt > 0 ? Math.hypot(cur.x - b.ult.x, cur.z - b.ult.z) / dt : 0, sentado = !!o.sentado && o.vivo;
     b.ult.copy(cur);
     b.grupo.position.copy(cur);
     let d = yaw - b.grupo.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d));
     b.grupo.rotation.y += d * k;
-    b.andar += ((o.vivo && vel > 0.4 ? Math.min(1, vel / 3) : 0) - b.andar) * k;
+    b.andar += ((o.vivo && !sentado && vel > 0.4 ? Math.min(1, vel / 3) : 0) - b.andar) * k;
     b.fase += Math.min(vel, 6) * dt * 2.6;
     const s = Math.sin(b.fase) * b.andar, ir = (obj, eixo, alvo) => { obj.rotation[eixo] += (alvo - obj.rotation[eixo]) * k; };
     b.pernas.forEach((p, i) => {
       const lado = i ? -s : s;
-      ir(p.coxa, "x", o.vivo ? lado * 0.7 : 0); ir(p.canela, "x", o.vivo ? -Math.max(0, -lado) * 0.9 : 0);
+      ir(p.coxa, "x", !o.vivo ? 0 : sentado ? 2.2 : lado * 0.7); ir(p.canela, "x", !o.vivo ? 0 : sentado ? -1.95 : -Math.max(0, -lado) * 0.9);
     });
     const [esq, dir] = b.bracos;
     let ex = 0, ez = 0, ea = 0, dx = 0, dz = 0, da = 0;                        // ombro x, ombro z, cotovelo
     if (!o.vivo) { /* braços soltos */ }
     else if (o.pose === "arma") { ex = dx = Math.PI / 2 + o.pitch * 0.9; ez = 0.42; dz = -0.1; }
-    else if (o.pose === "preso") { ex = dx = 0.35; ez = 0.3; dz = -0.3; ea = da = 0.9; }
-    else { dx = Math.PI / 2 - 0.08; dz = -0.1; ex = -s * 0.5; ea = 0.2; }
+    else if (o.pose === "preso") { ex = dx = sentado ? 0.75 : 0.35; ez = 0.3; dz = -0.3; ea = da = 0.9; }
+    else if (o.pose === "solto") { ex = -s * 0.5; dx = s * 0.5; ea = da = 0.15; }
+    else { dx = Math.PI / 2 - 0.08 + (o.pitch || 0) * 0.9; dz = -0.1; ex = -s * 0.5; ea = 0.2; }
     ir(esq.ombro, "x", ex); ir(esq.ombro, "z", ez); ir(esq.ante, "x", ea);
     ir(dir.ombro, "x", dx); ir(dir.ombro, "z", dz); ir(dir.ante, "x", da);
-    ir(b.tronco, "x", o.vivo ? (b.curvado ? -0.22 : -0.04) - b.andar * 0.06 : 0);
+    ir(b.tronco, "x", !o.vivo ? 0 : sentado ? -0.12 : (b.curvado ? -0.22 : -0.04) - b.andar * 0.06);
     b.corpo.scale.y += ((o.agachado && o.vivo ? 0.68 : 1) - b.corpo.scale.y) * k;
     b.corpo.rotation.x += ((o.vivo ? 0 : -Math.PI / 2) - b.corpo.rotation.x) * k;   // caído
-    b.corpo.position.y += ((o.vivo ? 0 : 0.16) - b.corpo.position.y) * k;
+    b.corpo.position.y += ((!o.vivo ? 0.16 : sentado ? -0.72 : 0) - b.corpo.position.y) * k;
+    for (const c of b.cordas) c.visible = o.vivo && o.pose === "preso";
   }
   function atualizarBonecos(dt) {
     const meuTime = eu() && eu().time, k = 1 - Math.exp(-18 * dt);
@@ -791,23 +910,27 @@
       if (j.boneco && (j.boneco.time !== j.time || j.boneco.nome !== j.nome)) removerBoneco(j);
       if (!j.boneco) { j.boneco = criarBoneco({ nome: j.nome, css: TIMES[j.time].css, armado: true, time: j.time }); j.boneco.time = j.time; j.boneco.nome = j.nome; }
       if (j.cur.distanceToSquared(j.pos) > 64) j.cur.copy(j.pos); else j.cur.lerp(j.pos, k);   // passagem secreta: aparece direto
-      j.boneco.grupo.visible = j.pos.y > -40;
-      posar(j.boneco, j.cur, j.yaw, k, dt, { vivo: j.vivo, agachado: j.agachado, pitch: j.pitch, pose: "arma" });
-      j.boneco.placa.visible = j.vivo && j.time === meuTime;
-      const a = j.alvo;
-      if (a) {
-        a.alive = j.vivo && mp.fase === "valendo"; a.crouching = j.agachado; a.yaw = j.yaw; a.pitch = j.pitch;
-        a.eye.set(j.cur.x, j.cur.y + (j.agachado ? 1.05 : 1.62), j.cur.z);
-        a.forward.set(-Math.sin(j.yaw), 0, -Math.cos(j.yaw));
+      const b = j.boneco, a = ARMAS[j.arma], v = VARIANTES[j.arma];
+      b.grupo.visible = j.pos.y > -40;
+      armarBoneco(b, j.vivo ? j.arma : null);
+      b.colete.visible = !!(j.armadura & 1); b.capacete.visible = !!(j.armadura & 2); b.bone.visible = !b.capacete.visible;
+      posar(b, j.cur, j.yaw, k, dt, { vivo: j.vivo, agachado: j.agachado, pitch: j.pitch, pose: !a ? "solto" : a.faca || (v && v.curta) ? "pistola" : "arma" });
+      b.placa.visible = j.vivo && j.time === meuTime;
+      const al = j.alvo;
+      if (al) {
+        al.alive = j.vivo && mp.fase === "valendo"; al.crouching = j.agachado; al.yaw = j.yaw; al.pitch = j.pitch;
+        al.eye.set(j.cur.x, j.cur.y + (j.agachado ? 1.05 : 1.62), j.cur.z);
+        al.forward.set(-Math.sin(j.yaw), 0, -Math.cos(j.yaw));
       }
     }
     for (const r of mp.refens) {
       const antes = r.cur.clone();
       if (r.cur.distanceToSquared(r.pos) > 64) r.cur.copy(r.pos); else r.cur.lerp(r.pos, k);
-      const dx = r.cur.x - antes.x, dz = r.cur.z - antes.z;
-      if (dx * dx + dz * dz > 1e-6) r.yaw = Math.atan2(-dx, -dz);
+      const dx = r.cur.x - antes.x, dz = r.cur.z - antes.z, lim = 0.6 * dt;
+      r.miraT = (r.miraT || 0) - dt;
+      if (r.estado === 1 && r.miraT <= 0 && dx * dx + dz * dz > lim * lim) r.yaw = Math.atan2(-dx, -dz);   // só vira quando anda de verdade
       r.boneco.grupo.visible = r.estado !== 2;
-      posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: false, pitch: 0, pose: r.estado === 1 ? "pistola" : "preso" });
+      posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: false, pitch: 0, pose: r.estado === 1 ? "pistola" : "preso", sentado: r.estado === 0 && !!r.civil.senta });
       r.boneco.arma.visible = r.estado === 1;                 // solto pelo policial, já armado
     }
   }
@@ -834,7 +957,7 @@
       }
     };
     for (const j of mp.jogadores.values()) if (j.id !== mp.meuId && j.vivo && j.time !== meuTime) testar(j.cur, j.agachado ? 1.15 : 1.7, { j });
-    for (const r of mp.refens) if (r.estado < 2) testar(r.cur, 1.7 * r.civil.escala, { r });
+    for (const r of mp.refens) if (r.estado < 2) testar(r.cur, (r.estado === 0 && r.civil.senta ? 1.08 : 1.7) * r.civil.escala, { r });
     return melhor;
   }
   function instalarTiros() {
@@ -846,7 +969,7 @@
         if ((!parede || h.dist < parede.dist) && (!maq || h.dist < maq.dist)) {
           const q = (opt.damage || 28) * (h.cabeca ? CFG.danoCabeca : 1);
           G.combat.stats.shots++; G.combat.stats.hits++;
-          if (h.j) enviar({ t: "acerto", em: h.j.id, q, de: arr(o) });
+          if (h.j) enviar({ t: "acerto", em: h.j.id, q, de: arr(o), c: h.cabeca ? 1 : 0 });
           else if (h.cabeca) enviar({ t: "acertoRefem", i: h.r.i });      // refém só se fere com tiro na cabeça
           if (h.j || h.cabeca) G.hud.hitmarker(h.cabeca ? "weak" : "hit");
           try { G.fx.sparks(h.ponto, dir.clone().negate(), 5); } catch {}
@@ -896,6 +1019,8 @@
   function tiroRemoto(m) {
     if (!emRodada() || m.id === mp.meuId) return;
     const o = new V3().fromArray(m.o), e = new V3().fromArray(m.e);
+    if (m.id === "refem") for (const r of mp.refens)          // o refém vira para onde atirou
+      if (r.estado === 1 && Math.hypot(r.pos.x - o.x, r.pos.z - o.z) < 1.5) { r.yaw = Math.atan2(-(e.x - o.x), -(e.z - o.z)); r.miraT = 0.9; }
     try { G.fx.tracer(o, e); } catch {}
     try { G.render.lightPool.flash(o, 16756832, 30, 8, 0.05); } catch {}
     tocar("rifle_shot", { pos: o });
@@ -1054,9 +1179,9 @@
     const acertou = Math.random() < ia.precisao * (dist < 10 ? 1.4 : dist > 20 ? 0.6 : 1), fim = alvo.peito.clone();
     if (!acertou) fim.add(new V3((Math.random() - 0.5) * 2.4, (Math.random() - 0.2) * 1.6, (Math.random() - 0.5) * 2.4));
     paraTodos({ t: "tiro", id: "refem", o: arr(olho), e: arr(fim) });
-    if (acertou) paraUm(alvo.j.id, { t: "dano", q: ia.dano, de: arr(r.pos), por: "refem" });
+    if (acertou) paraUm(alvo.j.id, { t: "dano", q: ia.dano, de: arr(r.pos), por: "refem", c: 0 });
   }
-  // anfitrião: reféns não ficam parados; o solto segue quem o soltou, desvia de quem mira nele e atira
+  // anfitrião: o refém preso fica parado no lugar; o solto segue quem o soltou, desvia de quem mira nele e atira
   function moverRefens(dt) {
     const ia = dif().refem;
     for (const r of mp.refens) {
@@ -1077,23 +1202,17 @@
           wx = ax / ad; wz = az / ad;
         }
       }
-      // passinhos e pulos ao acaso, sem se afastar do lugar (ou de quem está seguindo)
-      r.passoT -= dt;
-      if (r.passoT <= 0) {
-        r.passoT = 0.6 + Math.random() * 1.2;
-        const a = Math.random() * 6.283; r.passo = Math.random() < 0.7 ? [Math.cos(a), Math.sin(a)] : [0, 0];
-        if (r.noChao && Math.random() < 0.25) r.vel.y = 5;
-      }
-      if (!wx && !wz) {
-        const ox = ancora.x - r.pos.x, oz = ancora.z - r.pos.z, od = Math.hypot(ox, oz);
-        if (od > folga) { wx = ox / od * 0.6; wz = oz / od * 0.6; } else { wx = r.passo[0] * 0.45; wz = r.passo[1] * 0.45; }
-      }
-      // desvia para o lado (e às vezes pula) quando um Terrorista mira nele
-      const lado = inimigoMirando(r);
-      if (lado) {
-        r.ladoT -= dt;
-        if (r.ladoT <= 0) { r.ladoT = 0.5 + Math.random() * 0.6; r.lado = Math.random() < 0.5 ? 1 : -1; if (r.noChao && Math.random() < ia.esquiva * 0.5) r.vel.y = 5; }
-        wx += lado[0] * r.lado * ia.esquiva; wz += lado[1] * r.lado * ia.esquiva;
+      if (r.estado === 1) {
+        if (!wx && !wz) {                              // parado perto de quem segue; só anda se ficou para trás
+          const ox = ancora.x - r.pos.x, oz = ancora.z - r.pos.z, od = Math.hypot(ox, oz);
+          if (od > folga) { wx = ox / od * 0.6; wz = oz / od * 0.6; }
+        }
+        const lado = inimigoMirando(r);                // desvia para o lado (e às vezes pula) quando um Terrorista mira nele
+        if (lado) {
+          r.ladoT -= dt;
+          if (r.ladoT <= 0) { r.ladoT = 0.5 + Math.random() * 0.6; r.lado = Math.random() < 0.5 ? 1 : -1; if (r.noChao && Math.random() < ia.esquiva * 0.5) r.vel.y = 5; }
+          wx += lado[0] * r.lado * ia.esquiva; wz += lado[1] * r.lado * ia.esquiva;
+        }
       }
       const wl = Math.hypot(wx, wz), vel = CFG.velRefem * r.civil.vel;
       if (wl > 1) { wx /= wl; wz /= wl; }
@@ -1120,7 +1239,7 @@
   // policial: segurar E perto de um refém preso para soltá-lo
   function interagir(dt) {
     const j = eu(), p = G.player;
-    if (j && j.time === "p" && p.alive && mp.fase === "valendo")
+    if (j && p.alive && mp.fase === "valendo")
       for (const b of mp.bombas.values()) {
         if (Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) > 2.2 || Math.abs(b.pos.y - p.pos.y) > 2.5) continue;
         mp.desarmarT = G.input.down("interact") ? mp.desarmarT + dt / CFG.tempoDesarmar : Math.max(0, mp.desarmarT - dt * 2);
@@ -1188,14 +1307,22 @@
     parede(S.porta[0], S.altoPorta, S.z1 - 0.1, S.porta[1], S.teto, S.z1);   // acima da porta
     parede(S.x0, S.teto - 0.1, S.z0, S.x1, S.teto, S.z1);                    // teto
     fecharVao(true);
+    let mesaCortada = false;
     const identidade = new T.Matrix4();
     G.scene.traverse(o => {
       if (!o.isMesh || o.isInstancedMesh || !o.parent || o.parent.name !== "level-merged" || !o.matrixWorld.equals(identidade)) return;
       const nome = o.material.name, pos = o.geometry.attributes.position;
-      if (!["paint_white", "glass_dirty", "paint_grey"].includes(nome) || pos.count % 24) return;
+      if (!["paint_white", "glass_dirty", "paint_grey", "wood_dark"].includes(nome) || pos.count % 24) return;
       for (let c = 0; c < pos.count; c += 24) {             // a geometria é feita de caixas de 24 vértices
         let ax = 1e9, bx = -1e9, ay = 1e9, by = -1e9, az = 1e9, bz = -1e9;
         for (let i = c; i < c + 24; i++) { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i); ax = Math.min(ax, x); bx = Math.max(bx, x); ay = Math.min(ay, y); by = Math.max(by, y); az = Math.min(az, z); bz = Math.max(bz, z); }
+        if (nome === "wood_dark") {             // a mesa ia de parede a parede, na frente das portas secretas: fica só o meio
+          if (ax < S.x0 + 0.6 && bx > S.x1 - 0.6 && az > S.z0 && bz < S.z0 + 1.3 && ay > S.chao && by < S.chao + 1) {
+            for (let i = c; i < c + 24; i++) { const x = pos.getX(i); if (x < MESA[0]) pos.setX(i, MESA[0]); else if (x > MESA[1]) pos.setX(i, MESA[1]); }
+            pos.needsUpdate = true; mesaCortada = true;
+          }
+          continue;
+        }
         if (az < S.z1 - 0.12 || bz > S.z1 + 0.08 || ay < S.chao - 0.05) continue;       // só o que está na parede da frente
         if (nome === "paint_grey" && perto(ax, S.porta[0]) && perto(bx, S.porta[1])) {      // a chapa da porta
           portaGeo = o.geometry; portaIni = c; portaOrig = Array.from({ length: 72 }, (_, k) => pos.array[c * 3 + k]);
@@ -1207,6 +1334,9 @@
         }
       }
     });
+    // a mesa passa a ser sólida, para ninguém (nem os reféns) atravessar
+    if (mesaCortada) parede(MESA[0], S.chao, S.z0, MESA[1], S.chao + 0.78, MESA[2]); else parede(S.x0, S.chao, S.z0, S.x1, S.chao + 0.78, MESA[2]);
+    pesMesa.visible = mesaCortada;
   }
   function fecharVao(fechar) {
     const fis = G.physics, S = SALA;
@@ -1229,6 +1359,7 @@
     }
     pos.needsUpdate = true;
   }
+  let pesMesa = null;
   function montarCenario() {
     const T = G.THREE; cenario = new T.Group(); cenario.visible = false;
     // portas secretas: chapa de aço com batente e placa com o número e o destino, nos materiais do próprio jogo
@@ -1247,6 +1378,21 @@
       placa.position.set(0, 2.24, 0.03); g.add(placa);
       if (oeste) { g.position.set(S.x0 + 0.13, S.chao, s.de[1]); g.rotation.y = Math.PI / 2; } else g.position.set(s.de[0], S.chao, S.z0 + 0.13);
       cenario.add(g);
+    });
+    // pés da mesa (ela ficou só com o meio do tampo)
+    pesMesa = new T.Group(); pesMesa.visible = false; cenario.add(pesMesa);
+    for (const x of [MESA[0] + 0.05, MESA[1] - 0.05]) caixa(pesMesa, aco, 0.05, 0.7, 0.6, x, S.chao + 0.35, -27.03);
+    // cabide de armas sob a janela da frente: chapa de aço, travessas e uma etiqueta com o nome de cada arma
+    const zc = S.z1 - 0.09, xc = -13.62;
+    caixa(cenario, aco, 3.9, 0.86, 0.03, xc, S.chao + 0.45, zc);
+    caixa(cenario, batente, 3.9, 0.04, 0.09, xc, S.chao + 0.03, zc - 0.03); caixa(cenario, batente, 3.9, 0.035, 0.06, xc, S.chao + 0.89, zc - 0.02);
+    caixa(cenario, aco, 3.9, 0.13, 0.02, xc, S.chao + 0.975, zc);
+    Object.keys(ARMAS).filter(k => ARMAS[k].time === "p").forEach((k, n) => {
+      const cv = document.createElement("canvas"); cv.width = 320; cv.height = 64; const c = cv.getContext("2d");
+      c.fillStyle = "#14181b"; c.fillRect(0, 0, 320, 64); c.strokeStyle = "#ffb347"; c.lineWidth = 4; c.strokeRect(2, 2, 316, 60);
+      c.fillStyle = "#e8e4da"; c.textAlign = "center"; c.textBaseline = "middle"; c.font = '600 36px "Barlow Condensed", Arial, sans-serif'; c.fillText(ARMAS[k].nome.toUpperCase(), 160, 34);
+      const et = new T.Mesh(new T.PlaneGeometry(0.56, 0.112), new T.MeshBasicMaterial({ map: new T.CanvasTexture(cv), toneMapped: false }));
+      et.position.set(-15.1 + n * 0.64, S.chao + 0.975, zc - 0.012); et.rotation.y = Math.PI; cenario.add(et);
     });
     // ponto de resgate: moldura listrada pintada no chão
     discoResgate = new T.Group(); discoResgate.visible = false; cenario.add(discoResgate);
@@ -1268,8 +1414,7 @@
   }
 
   /* --------------------------------------------------------------- explosivos */
-  const NOMES_ITEM = { granada: "Granada", bomba: "Bomba", relogio: "Bomba-relógio" };
-  const CORES_ITEM = { granada: 0x7bd88f, bomba: 0xff5a40, relogio: 0xffb347 };
+  const NOMES_ITEM = { granada: "Granada", bomba: "Bomba", relogio: "Bomba-relógio", colete: "Colete", capacete: "Capacete" };
   let explosivos = null, bolsaEl = null;
   // modelos: granada verde-oliva com alavanca e argola; bomba = banana de dinamite com detonador;
   // bomba-relógio = maleta com mostrador. "led" pisca nas bombas armadas.
@@ -1277,11 +1422,26 @@
     const T = G.THREE, g = new T.Group();
     const mat = (hex, rug = 0.7, met = 0.1) => new T.MeshStandardMaterial({ color: hex, roughness: rug, metalness: met });
     const add = (geo, m, x, y, z) => { const o = new T.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; g.add(o); return o; };
-    const aco = mat(0x8c9299, 0.4, 0.8), preto = mat(0x15171a, 0.8, 0.2);
-    if (tipo === "granada") {
-      const oliva = mat(0x4b5a2a, 0.65, 0.2);
-      add(new T.SphereGeometry(0.06, 16, 12), oliva, 0, 0, 0).scale.y = 1.22;
-      for (const y of [-0.025, 0.025]) add(new T.TorusGeometry(0.059, 0.004, 6, 22), preto, 0, y, 0).rotation.x = Math.PI / 2;
+    // metal, fosfato e polímero são os materiais da arma do jogo (com a textura deles), tingidos quando preciso
+    const base = (i, hex) => { const m = G.weapon.root.children[i].material.clone(); if (hex != null) m.color.set(hex); return m; };
+    const aco = base(0, 0xb4b9be), preto = base(1), tx = texturasDeRoupa();
+    if (tipo === "colete") {                    // colete tático: corpo, alças, bolsos e fivela
+      const lona = new T.MeshStandardMaterial({ color: 0x454e3a, roughness: 0.85, map: tx.tecido, bumpMap: tx.tecido, bumpScale: 1.2 }), bolso = lona.clone(); bolso.color.set(0x5d6650);
+      add(new T.CylinderGeometry(0.17, 0.155, 0.34, 16), lona, 0, 0, 0).scale.z = 0.62;
+      for (const x of [-0.09, 0.09]) add(new T.BoxGeometry(0.06, 0.07, 0.17), lona, x, 0.2, 0);
+      for (const x of [-0.085, 0, 0.085]) add(new T.BoxGeometry(0.07, 0.09, 0.04), bolso, x, -0.07, -0.108);
+      add(new T.BoxGeometry(0.2, 0.05, 0.02), bolso, 0, 0.08, -0.1);
+      add(new T.BoxGeometry(0.035, 0.03, 0.012), aco, 0, 0.08, -0.113);
+    } else if (tipo === "capacete") {           // capacete: casco, aba, forro e jugular
+      const casco = base(2, 0x4a5340); casco.side = T.DoubleSide;
+      add(new T.SphereGeometry(0.13, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.56), casco, 0, -0.02, 0).scale.set(0.96, 1, 1.08);
+      add(new T.TorusGeometry(0.127, 0.006, 6, 28), preto, 0, -0.045, 0).rotation.x = Math.PI / 2;
+      add(new T.TorusGeometry(0.1, 0.005, 6, 20, Math.PI), preto, 0, -0.05, 0).rotation.set(0, Math.PI / 2, Math.PI);
+    } else if (tipo === "granada") {
+      const oliva = base(2, 0x5a6a30);
+      add(new T.SphereGeometry(0.06, 24, 18), oliva, 0, 0, 0).scale.y = 1.22;
+      for (const y of [-0.045, -0.022, 0, 0.022, 0.045]) { const a = add(new T.TorusGeometry(0.0605 * Math.sqrt(1 - (y / 0.0735) ** 2), 0.0035, 6, 28), preto, 0, y, 0); a.rotation.x = Math.PI / 2; }   // sulcos
+      for (let k = 0; k < 6; k++) { const a = add(new T.TorusGeometry(0.0605, 0.003, 6, 28), preto, 0, 0, 0); a.rotation.y = k * Math.PI / 6; a.scale.y = 1.22; }
       add(new T.CylinderGeometry(0.02, 0.026, 0.035, 12), aco, 0, 0.086, 0);
       add(new T.BoxGeometry(0.014, 0.1, 0.02), aco, 0.045, 0.045, 0).rotation.z = -0.35;        // alavanca
       add(new T.TorusGeometry(0.02, 0.003, 6, 16), aco, -0.04, 0.1, 0);                          // argola
@@ -1289,14 +1449,16 @@
       const led = add(new T.SphereGeometry(0.012, 8, 8), new T.MeshStandardMaterial({ color: 0xff2a1a, emissive: 0xff2a1a, emissiveIntensity: 2 }), 0, 0, 0);
       g.userData.led = led;
       if (tipo === "bomba") {
-        const vermelho = mat(0xa3211b, 0.75, 0);
+        const vermelho = new T.MeshStandardMaterial({ color: 0xa3211b, roughness: 0.8, map: tx.pele, bumpMap: tx.tecido, bumpScale: 0.6 });
+        add(new T.BoxGeometry(0.05, 0.004, 0.03), new T.MeshStandardMaterial({ color: 0x1a0500, emissive: 0xff3a1a, emissiveIntensity: 1.2 }), -0.012, 0.096, 0);   // visor do detonador
         for (const [y, z] of [[0, -0.024], [0, 0.024], [0.042, 0]]) { const b = add(new T.CylinderGeometry(0.023, 0.023, 0.22, 12), vermelho, 0, y, z); b.rotation.z = Math.PI / 2; }
         for (const x of [-0.06, 0.06]) add(new T.BoxGeometry(0.016, 0.1, 0.105), preto, x, 0.018, 0);          // fita
         add(new T.BoxGeometry(0.08, 0.03, 0.055), preto, 0, 0.08, 0);                                          // detonador
         for (const [x, c] of [[-0.03, 0xd8b21c], [0.03, 0x2a6fd6]]) { const f = add(new T.TorusGeometry(0.03, 0.003, 6, 12, Math.PI), mat(c), x, 0.085, 0.02); f.rotation.y = Math.PI / 2; }
         led.position.set(0.025, 0.1, 0);
       } else {
-        add(new T.BoxGeometry(0.24, 0.07, 0.16), mat(0x2b2f33, 0.5, 0.6), 0, 0, 0);                             // maleta
+        add(new T.BoxGeometry(0.24, 0.07, 0.16), base(1, 0x565c63), 0, 0, 0);                                   // maleta
+        for (const x of [-0.1, 0.1]) add(new T.BoxGeometry(0.02, 0.012, 0.012), aco, x, 0.02, 0.083);            // fechos
         add(new T.BoxGeometry(0.245, 0.006, 0.165), aco, 0, 0.012, 0);
         add(new T.TorusGeometry(0.035, 0.006, 6, 12, Math.PI), preto, 0, 0, 0.08).rotation.x = Math.PI / 2;     // alça
         add(new T.CylinderGeometry(0.045, 0.045, 0.01, 20), mat(0xe8e4da, 0.6, 0), -0.04, 0.04, 0);             // mostrador
@@ -1309,9 +1471,9 @@
     explosivos.add(g);
     return g;
   }
-  // item para pegar: flutua e gira sobre um anel no chão
-  function comAnel(modelo, cor) {
-    const T = G.THREE, anel = new T.Mesh(new T.RingGeometry(0.3, 0.38, 28), new T.MeshBasicMaterial({ color: cor, transparent: true, opacity: 0.75, side: T.DoubleSide, depthWrite: false }));
+  // item para pegar: flutua e gira sobre um aro fino e claro no chão (sem cor de time)
+  function anelNeutro() {
+    const T = G.THREE, anel = new T.Mesh(new T.RingGeometry(0.33, 0.36, 32), new T.MeshBasicMaterial({ color: 0xe8e4da, transparent: true, opacity: 0.4, side: T.DoubleSide, depthWrite: false }));
     anel.rotation.x = -Math.PI / 2;
     return anel;
   }
@@ -1321,7 +1483,7 @@
       m.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
     }
     mp.itens.clear(); mp.bombas.clear(); mp.granadas.length = 0;
-    mp.bolsa = { granada: 0, bomba: 0, relogio: 0 }; mp.desarmarT = 0;
+    mp.bolsa = { granada: 0, bomba: 0, relogio: 0 }; mp.desarmarT = 0; mp.colete = false; mp.capacete = false;
   }
   function ferirRefem(r, golpes, porId) {       // anfitrião; cada golpe vale um tiro na cabeça
     if (mp.fase !== "valendo" || r.estado > 1 || golpes <= 0) return;
@@ -1332,15 +1494,20 @@
     paraTodos({ t: "refem", i: r.i, ev: "morto", id: porId });
     fimDaRodada(quem && quem.time === "p" ? "t" : "p", (quem ? quem.nome : "Alguém") + " matou um refém");
   }
-  function sortearItens() {                     // anfitrião: pontos aleatórios, longe da base dos Policiais
-    const itens = []; let id = 1;
-    for (const [tipo, n] of Object.entries(CFG.itens)) for (let k = 0; k < n; k++) {
-      let p = new V3();
-      for (let tent = 0; tent < 20; tent++) {
-        try { p = G.physics.nav.randomPoint(new V3(0, 0, 0), 34); } catch {}
-        if (Math.hypot(p.x - BASE_POLICIA[0], p.z - BASE_POLICIA[1]) > 14) break;
+  function sortearItens() {                     // anfitrião: pontos aleatórios pelo mapa todo, cada item longe dos outros
+    const itens = [], postos = [], jogando = [...mp.jogadores.values()].filter(j => j.time).length; let id = 1;
+    const quantos = { ...CFG.itens, colete: jogando * 2, capacete: jogando * 2 };
+    for (const [tipo, n] of Object.entries(quantos)) for (let k = 0; k < n; k++) {
+      let melhor = null, folga = -1;
+      for (let tent = 0; tent < 40; tent++) {           // fica com o ponto mais afastado dos itens já postos
+        let p = null; try { p = G.physics.nav.randomPoint(new V3(0, 0, 0), 38); } catch {}
+        if (!p) continue;
+        let d = 1e9; for (const q of postos) d = Math.min(d, Math.hypot(p.x - q.x, p.z - q.z));
+        if (d > folga) { folga = d; melhor = p.clone(); }
+        if (d >= 8) break;
       }
-      itens.push([id++, tipo, +p.x.toFixed(1), +p.z.toFixed(1)]);
+      melhor = melhor || new V3(); postos.push(melhor);
+      itens.push([id++, tipo, +melhor.x.toFixed(1), +melhor.z.toFixed(1)]);
     }
     return itens;
   }
@@ -1361,7 +1528,7 @@
       explodir(b.pos, CFG[b.tipo], b.por);
     }
   }
-  // todos: granadas voando, bombas piscando, terrorista pegando itens do chão
+  // todos: granadas voando, bombas piscando, jogador pegando itens do chão
   function explosivosLocais(dt) {
     const p = G.player, j = eu(), tempo = G.time.t;
     for (let i = mp.granadas.length - 1; i >= 0; i--) {
@@ -1382,21 +1549,23 @@
     }
     for (const it of mp.itens.values()) {
       it.malha.rotation.y = tempo * 1.5; it.malha.position.y = 0.45 + Math.sin(tempo * 2 + it.id) * 0.05;
-      if (j && j.time === "t" && p.alive && mp.fase === "valendo" && !it.pedido && Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z) < 1.3 && p.pos.y < 2) {
+      if ((it.tipo === "colete" || it.tipo === "capacete") && mp[it.tipo]) continue;      // já está usando um: passa por cima sem pegar
+      if (j && p.alive && mp.fase === "valendo" && !it.pedido && Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z) < 1.3 && p.pos.y < 2) {
         it.pedido = true; enviar({ t: "pegueiItem", id: it.id });
       }
     }
-    const b = mp.bolsa, mostra = !!(j && j.time === "t" && p.alive);
+    const b = mp.bolsa, mostra = !!(j && p.alive);
     bolsaEl.hidden = !mostra;
     if (mostra) {
       const txt = `<span><kbd>Q</kbd> Granada <b>${b.granada}</b></span><span><kbd>B</kbd> Bomba <b>${b.bomba}</b></span>` +
-        `<span><kbd>V</kbd> Relógio <b>${b.relogio}</b> · <kbd>T</kbd> ${CFG.relogio.tempos[mp.tempoIdx]}s</span>`;
+        `<span><kbd>V</kbd> Relógio <b>${b.relogio}</b> · <kbd>T</kbd> ${CFG.relogio.tempos[mp.tempoIdx]}s</span>` +
+        `<span>Colete <b>${mp.colete ? "sim" : "não"}</b> · Capacete <b>${mp.capacete ? "sim" : "não"}</b></span>`;
       if (txt !== bolsaEl._txt) { bolsaEl._txt = txt; bolsaEl.innerHTML = txt; }
     }
   }
   window.addEventListener("keydown", ev => {
     const p = G && G.player, j = eu();
-    if (!emRodada() || mp.fase !== "valendo" || !j || j.time !== "t" || !p.alive || ev.repeat) return;
+    if (!emRodada() || mp.fase !== "valendo" || !j || !p.alive || ev.repeat) return;
     if (ev.code === "KeyT") mp.tempoIdx = (mp.tempoIdx + 1) % CFG.relogio.tempos.length;
     else if (ev.code === "KeyQ" && mp.bolsa.granada > 0) {
       mp.bolsa.granada--;
@@ -1417,34 +1586,36 @@
       const j = mp.jogadores.get(id); if (!j) continue;
       const chaves = Object.keys(ARMAS).filter(k => ARMAS[k].time === j.time), dentro = pt[1] > 1, fila = dentro ? naSala++ : 0;
       chaves.forEach((k, n) => {
-        if (dentro) return lista.push([mp.proxId++, k, +(-15.1 + n * 0.62).toFixed(2), +(-24.4 - fila * 0.75).toFixed(2), SALA.chao]);   // fileiras junto à parede da frente
+        if (dentro) return lista.push([mp.proxId++, k, +(-15.1 + n * 0.64 + (fila ? 0.15 : -0.15)).toFixed(2), +(SALA.z1 - 0.35).toFixed(2), SALA.chao, 1]);   // no cabide sob a janela
         const ang = n / chaves.length * Math.PI * 2, q = pisavel(pt[0] + Math.cos(ang) * 2, pt[2] + Math.sin(ang) * 2);
         lista.push([mp.proxId++, k, +q[0].toFixed(2), +q[1].toFixed(2), 0]);
       });
     }
     return lista;
   }
-  // a arma no chão é uma cópia do modelo do jogo com a variação dela (a faca, a lâmina), girando sobre um anel na cor do time
+  // a arma para pegar é uma cópia do modelo do jogo: no cabide da sala fica em pé, de perfil; no chão, gira sobre um aro
   function porArmaNoChao(d) {
-    const T = G.THREE, a = ARMAS[d[1]], raiz = G.weapon.root, g = new T.Group(), giro = new T.Group(); if (!a) return;
-    const noMundo = o => { o.traverse(x => { x.layers.set(0); x.frustumCulled = true; x.castShadow = false; }); return o; };
-    if (a.faca) { const f = noMundo(facaModelo.clone(true)); f.position.set(-0.05, 0, 0); f.rotation.set(0, 0, 0); f.scale.setScalar(2.2); giro.add(f); }
-    else {
-      const v = VARIANTES[d[1]];
-      for (const i of [0, 1, 2, 3]) { const c = noMundo(raiz.children[i].clone()); c.visible = true; c.scale.set(v.g, v.g, v.z); c.position.set(0, 0, 0.08 * v.z); if (i === 2) c.material = acabamentos[v.acab]; giro.add(c); }
-      if (v.pente) { const c = noMundo(carregador.clone(true)); c.visible = true; c.scale.set(v.g * v.pente[0], v.g * v.pente[1], v.z); c.position.set(0, -0.02, (zCarregador + 0.08) * v.z); giro.add(c); }
-      giro.rotation.z = 0.25;
+    const T = G.THREE, a = ARMAS[d[1]], g = new T.Group(), giro = new T.Group(); if (!a) return;
+    const copia = copiaDaArma(d[1]), curta = a.faca || (VARIANTES[d[1]] || {}).curta; let anel = null;
+    giro.add(copia); g.add(giro);
+    if (d[5]) {
+      copia.rotation.set(Math.PI / 2, 0, Math.PI / 2); if (a.faca) copia.scale.setScalar(1.8);
+      giro.rotation.z = curta ? 0 : 0.3;                  // as longas ficam inclinadas, para caber sob a janela
+      giro.updateMatrixWorld(true);
+      const cx = new T.Box3().setFromObject(giro), alt = cx.max.y - cx.min.y;
+      giro.position.set(-(cx.min.x + cx.max.x) / 2, (curta ? 0.5 - alt / 2 : 0.07) - cx.min.y, 0.2 - (cx.min.z + cx.max.z) / 2);
+    } else {
+      if (a.faca) copia.scale.setScalar(2.2); else { copia.position.z = 0.08 * VARIANTES[d[1]].z; copia.scale.setScalar(1.2); giro.rotation.z = 0.25; }
+      giro.position.y = 0.5;
+      anel = anelNeutro(); anel.position.y = 0.04; g.add(anel);
     }
-    giro.position.y = 0.5; g.add(giro);
-    const anel = new T.Mesh(new T.RingGeometry(0.3, 0.38, 28), new T.MeshBasicMaterial({ color: TIMES[a.time].cor, transparent: true, opacity: 0.75, side: T.DoubleSide, depthWrite: false }));
-    anel.rotation.x = -Math.PI / 2; anel.position.y = 0.04; g.add(anel);
     g.position.set(d[2], d[4] || 0, d[3]); armasGrupo.add(g);
-    mp.armasChao.set(d[0], { id: d[0], arma: d[1], pos: new V3(d[2], d[4] || 0, d[3]), malha: g, giro, anel, pedido: false });
+    mp.armasChao.set(d[0], { id: d[0], arma: d[1], pos: new V3(d[2], d[4] || 0, d[3]), malha: g, giro, anel, fixo: !!d[5], pedido: false });
   }
   function tirarArmaDoChao(id) {
     const it = mp.armasChao.get(id); if (!it) return;
     armasGrupo.remove(it.malha);
-    it.anel.geometry.dispose(); it.anel.material.dispose();      // o resto é compartilhado com a arma do jogo
+    if (it.anel) { it.anel.geometry.dispose(); it.anel.material.dispose(); }      // o resto é compartilhado com a arma do jogo
     mp.armasChao.delete(id);
   }
   function limparArmas() {
@@ -1496,17 +1667,20 @@
     if (visivel !== mp.armaVisivel) { mp.armaVisivel = visivel; w.setVisible(visivel); }
     if (mp.arma !== modeloAtual) aplicarModelo(mp.arma);
     animarFaca(dt, !!(a && a.faca) && p.alive);
-    if (!a && p.alive && mp.semPegarT <= 0 && mp.fase !== "fim")
+    if (!a && p.alive && mp.semPegarT <= 0 && mp.fase !== "fim") {
+      let alvo = null, dAlvo = 0.85;                  // pega a mais próxima das que estão ao alcance
       for (const it of mp.armasChao.values()) {
         const d = Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z);
         if (it.espera) { if (d > 1.8) it.espera = false; continue; }
-        if (!it.pedido && d < 0.8 && Math.abs(p.pos.y - it.pos.y) < 1.5) { it.pedido = true; mp.semPegarT = 0.4; enviar({ t: "armaPeguei", id: it.id }); break; }
+        if (!it.pedido && d < dAlvo && Math.abs(p.pos.y - it.pos.y) < 1.5) { dAlvo = d; alvo = it; }
       }
+      if (alvo) { alvo.pedido = true; mp.semPegarT = 0.4; enviar({ t: "armaPeguei", id: alvo.id }); }
+    }
     let perto = null, dPerto = 1.5;
     for (const it of mp.armasChao.values()) {
       const d = Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z);
       it.giro.visible = d < 16;                       // de longe fica só o anel, para não pesar
-      it.giro.rotation.y += dt * 1.2;
+      if (!it.fixo) it.giro.rotation.y += dt * 1.2;
       if (d < dPerto && Math.abs(p.pos.y - it.pos.y) < 1.5) { dPerto = d; perto = it; }
     }
     if (perto && p.alive) G.hud.message(ARMAS[perto.arma].nome + (a ? " · solte a sua com G para trocar" : ""), 0.3);
@@ -1518,7 +1692,8 @@
   /* ------------------------------------------------------- modelos das armas */
   // As armas de fogo usam o modelo original do jogo (o único detalhado), cada uma com uma variação:
   // z = comprimento, g = grossura, acab = acabamento da coronha e do guarda-mão,
-  // pente = [largura, altura] do carregador (0 = sem carregador), duasMaos = mão esquerda no guarda-mão.
+  // pente = [largura, altura] do carregador (0 = sem carregador), duasMaos = mão esquerda no guarda-mão,
+  // curta = pistola: o mesmo modelo sem coronha, sem guarda-mão e sem luneta, com a boca do cano junto à caixa da arma.
   const VARIANTES = {
     p_fuzil:    { z: 1,    g: 1,    acab: "preto",   pente: [1, 1],      duasMaos: true },
     t_fuzil:    { z: 1.06, g: 1.04, acab: "madeira", pente: [1, 1.25],   duasMaos: true },
@@ -1526,11 +1701,13 @@
     t_metra:    { z: 0.6,  g: 1,    acab: "areia",   pente: [0.9, 1.3],  duasMaos: true },
     p_12:       { z: 1.1,  g: 1.15, acab: "madeira", pente: 0,           duasMaos: true },
     t_12:       { z: 0.62, g: 1.2,  acab: "madeira", pente: 0,           duasMaos: true },
-    p_pistola:  { z: 0.42, g: 0.82, acab: "preto",   pente: [0.9, 0.7],  duasMaos: false },
-    p_revolver: { z: 0.38, g: 0.9,  acab: "aco",     pente: 0,           duasMaos: false },
-    t_pistola:  { z: 0.45, g: 0.85, acab: "areia",   pente: [0.9, 0.7],  duasMaos: false },
-    t_pistola2: { z: 0.42, g: 0.82, acab: "preto",   pente: [0.9, 1.5],  duasMaos: false },
+    p_pistola:  { z: 1,    g: 0.9,  acab: "preto",   pente: 0,           duasMaos: false, curta: true },
+    p_revolver: { z: 0.88, g: 0.98, acab: "aco",     pente: 0,           duasMaos: false, curta: true },
+    t_pistola:  { z: 1.08, g: 0.94, acab: "areia",   pente: 0,           duasMaos: false, curta: true },
+    t_pistola2: { z: 1.12, g: 0.86, acab: "madeira", pente: 0,           duasMaos: false, curta: true },
   };
+  const NA_MAO = [0, 0.02, -0.2];      // a pistola é curta: sobe e avança na mão para aparecer na tela
+  let ferrolho = null, maoDireita = null, posMao = null;
   let pecasDaArma = [], carregador = null, zCarregador = 0, coronha = null, acabamentos = {}, maoEsquerda = null, clarao = null,
     facaNaMao = null, facaModelo = null, modeloAtual, facaAnim = 0, facaBalanco = 0;
   function montarModelos() {
@@ -1539,30 +1716,86 @@
     coronha = raiz.children[2]; clarao = raiz.children[8]; maoEsquerda = raiz.children[10];
     const areia = carregador.children[0].material, madeira = areia.clone(); madeira.color.set(0x8a5230);
     acabamentos = { preto: coronha.material, areia, madeira, aco: raiz.children[0].material };
+    ferrolho = raiz.children[4]; maoDireita = raiz.children[9]; posMao = maoDireita.position.clone();
+    for (const o of pecasDaArma) if (o.isMesh) {
+      o.userData.inteira = o.geometry; try { o.userData.curta = cortarCurta(o.geometry); } catch { o.userData.curta = o.geometry; }
+      // o jogo anima o z do ferrolho, então nele o avanço da pistola vai embutido na geometria
+      o.userData.curtaNaMao = o === ferrolho ? o.userData.curta.clone().translate(0, 0, NA_MAO[2]) : o.userData.curta;
+    }
     // a faca: lâmina recortada, guarda e cabo, na mão de luva do próprio jogo. Fica presa à câmera na mesma
     // posição em que o jogo segura o fuzil, porque a arma do jogo some quando se está de faca.
     facaNaMao = new T.Group(); facaNaMao.visible = false;
     const mao = raiz.children[9].clone(true); facaNaMao.add(mao);
     const perfil = new T.Shape(); perfil.moveTo(0, -0.013); perfil.lineTo(0.12, -0.013); perfil.lineTo(0.175, 0.006); perfil.lineTo(0.13, 0.014); perfil.lineTo(0, 0.014); perfil.closePath();
     const pronto = m => { m.layers.set(1); m.frustumCulled = false; m.receiveShadow = true; return m; };
-    const lamina = pronto(new T.Mesh(new T.ExtrudeGeometry(perfil, { depth: 0.003, bevelEnabled: true, bevelThickness: 0.0012, bevelSize: 0.0012, bevelSegments: 1 }), raiz.children[0].material));
+    const lamina = pronto(new T.Mesh(new T.ExtrudeGeometry(perfil, { depth: 0.003, bevelEnabled: true, bevelThickness: 0.0012, bevelSize: 0.0012, bevelSegments: 1 }), new T.MeshStandardMaterial({ color: 0xcfd4d8, metalness: 0.85, roughness: 0.28 })));
     const cabo = pronto(new T.Mesh(new T.CapsuleGeometry(0.014, 0.085, 4, 10), coronha.material)); cabo.rotation.z = Math.PI / 2; cabo.position.set(-0.055, 0, 0.0015);
     const guarda = pronto(new T.Mesh(new T.BoxGeometry(0.008, 0.045, 0.014), raiz.children[1].material)); guarda.position.set(-0.004, 0, 0.0015);
     facaModelo = new T.Group(); facaModelo.add(lamina, cabo, guarda);
     const faca = facaModelo.clone(true);
-    faca.position.set(0.02, -0.07, 0.1); faca.rotation.set(0, Math.PI / 2, 0.55);   // cabo dentro do punho, lâmina para a frente e um pouco para cima
+    faca.position.set(0.02, -0.07, 0.1); faca.rotation.set(0, Math.PI / 2, 0.55); faca.scale.setScalar(1.5);   // cabo dentro do punho, lâmina para a frente e um pouco para cima
     facaNaMao.add(faca);
     G.camera.add(facaNaMao);
   }
+  // A geometria da arma é feita de peças soltas. Para a pistola ficam só as peças da caixa da arma e do punho
+  // (nada atrás, nada à frente, nada em cima) e as peças da boca do cano são trazidas para junto da caixa.
+  function cortarCurta(geo) {
+    const T = G.THREE, g = geo.index ? geo.toNonIndexed() : geo, p = g.attributes.position, n = p.count, pai = new Map(), chaves = new Array(n);
+    const raiz = k => { while (pai.get(k) !== k) { pai.set(k, pai.get(pai.get(k))); k = pai.get(k); } return k; };
+    for (let v = 0; v < n; v++) { const k = p.getX(v).toFixed(4) + "," + p.getY(v).toFixed(4) + "," + p.getZ(v).toFixed(4); chaves[v] = k; if (!pai.has(k)) pai.set(k, k); }
+    for (let t = 0; t < n; t += 3) { pai.set(raiz(chaves[t]), raiz(chaves[t + 1])); pai.set(raiz(chaves[t + 1]), raiz(chaves[t + 2])); }
+    const caixas = new Map();                              // peça -> [z mínimo, z máximo, y mínimo]
+    for (let v = 0; v < n; v++) {
+      const k = raiz(chaves[v]); let b = caixas.get(k); if (!b) caixas.set(k, b = [9, -9, 9]);
+      b[0] = Math.min(b[0], p.getZ(v)); b[1] = Math.max(b[1], p.getZ(v)); b[2] = Math.min(b[2], p.getY(v));
+    }
+    const fica = [];                                       // pares: primeiro vértice do triângulo, quanto recuar
+    for (let t = 0; t < n; t += 3) {
+      const b = caixas.get(raiz(chaves[t])), boca = b[1] <= -0.458;
+      if (boca || (b[0] >= -0.11 && b[0] < 0.095 && b[2] < 0.0395)) fica.push(t, boca ? 0.361 : 0);
+    }
+    const nova = new T.BufferGeometry();
+    for (const nome in g.attributes) {
+      const a = g.attributes[nome], tam = a.itemSize, dados = new a.array.constructor(fica.length / 2 * 3 * tam);
+      for (let k = 0; k < fica.length; k += 2) for (let c = 0; c < 3 * tam; c++) dados[k / 2 * 3 * tam + c] = a.array[fica[k] * tam + c];
+      nova.setAttribute(nome, new T.BufferAttribute(dados, tam, a.normalized));
+    }
+    const np = nova.attributes.position;
+    for (let k = 0; k < fica.length; k += 2) if (fica[k + 1]) for (let c = 0; c < 3; c++) np.setZ(k / 2 * 3 + c, np.getZ(k / 2 * 3 + c) + fica[k + 1]);
+    return nova;
+  }
+  // cópia da arma para o mundo (cabide, chão, mão dos bonecos): mesmas peças e geometria da arma do jogo, de frente para -z
+  const materiaisMundo = new Map();
+  function materialMundo(m) {
+    let c = materiaisMundo.get(m);
+    if (!c) { c = m.clone(); if (c.color) c.color.lerp(new G.THREE.Color(0x9aa0a6), 0.2); materiaisMundo.set(m, c); }
+    return c;
+  }
+  function copiaDaArma(chave) {
+    const T = G.THREE, g = new T.Group(), raiz = G.weapon.root, v = VARIANTES[chave] || VARIANTES.p_fuzil;
+    const noMundo = o => { o.traverse(x => { x.layers.set(0); x.frustumCulled = true; x.castShadow = false; x.visible = true; x.userData.emprestado = true; if (x.isMesh) x.material = materialMundo(x.material); }); return o; };
+    if (ARMAS[chave] && ARMAS[chave].faca) { const f = noMundo(facaModelo.clone(true)); f.position.set(0, 0, 0); f.rotation.set(0, Math.PI / 2, 0); g.add(f); return g; }
+    for (const i of [0, 1, 2, 3, 4]) {
+      const o = raiz.children[i], c = new T.Mesh(v.curta ? o.userData.curta : o.userData.inteira, i === 2 ? acabamentos[v.acab] : o.material);
+      c.scale.set(v.g, v.g, v.z); g.add(noMundo(c));
+    }
+    if (v.pente) { const c = noMundo(carregador.clone(true)); c.scale.set(v.g * v.pente[0], v.g * v.pente[1], v.z); c.position.set(0, -0.02, zCarregador * v.z); g.add(c); }
+    return g;
+  }
   function aplicarModelo(chave) {
     const v = VARIANTES[chave] || VARIANTES.p_fuzil;      // mãos vazias e jogo solo: fuzil original
-    for (const o of pecasDaArma) o.scale.set(v.g, v.g, v.z);
+    const d = v.curta ? NA_MAO : [0, 0, 0];
+    for (const o of pecasDaArma) {
+      o.scale.set(v.g, v.g, v.z); if (o.userData.inteira) o.geometry = v.curta ? o.userData.curtaNaMao : o.userData.inteira;
+      o.position.x = d[0]; o.position.y = d[1]; if (o !== ferrolho) o.position.z = d[2];
+    }
+    maoDireita.position.set(posMao.x + d[0], posMao.y + d[1], posMao.z + d[2]);
     carregador.visible = !!v.pente;
     if (v.pente) carregador.scale.set(v.g * v.pente[0], v.g * v.pente[1], v.z);
     carregador.position.z = zCarregador * v.z;
     coronha.material = acabamentos[v.acab];
     maoEsquerda.visible = v.duasMaos;
-    clarao.position.z = -0.531 * v.z;
+    clarao.position.set(d[0], d[1], -(v.curta ? 0.17 : 0.531) * v.z + d[2]);
     modeloAtual = chave;
   }
   // a faca balança com a passada e, no golpe, recua, corta em arco da direita para a esquerda e volta
@@ -1576,9 +1809,9 @@
     const recuo = ativo && t < 0.25 ? t / 0.25 : 0;                                   // puxa para trás
     const corte = ativo && t >= 0.25 ? Math.sin((t - 0.25) / 0.75 * Math.PI) : 0;     // estocada em arco
     facaNaMao.position.set(
-      0.09 + Math.sin(facaBalanco * 0.5) * 0.006 * (0.3 + anda) + recuo * 0.04 - corte * 0.13,
-      -0.115 + Math.abs(Math.sin(facaBalanco)) * 0.008 * anda - recuo * 0.02 + corte * 0.03,
-      -0.33 + recuo * 0.07 - corte * 0.2);
+      0.075 + Math.sin(facaBalanco * 0.5) * 0.006 * (0.3 + anda) + recuo * 0.04 - corte * 0.13,
+      -0.05 + Math.abs(Math.sin(facaBalanco)) * 0.008 * anda - recuo * 0.02 + corte * 0.03,
+      -0.44 + recuo * 0.07 - corte * 0.2);
     facaNaMao.rotation.set(0.034 - corte * 0.35, 0.085 + recuo * 0.25 + corte * 0.75, -0.03 - corte * 0.3);
   }
 
@@ -1615,9 +1848,9 @@
       mp.envioT -= dt;
       if (mp.envioT <= 0) {
         mp.envioT = 1 / 30;      // 30 atualizações por segundo entre os jogadores
-        if (j) enviar({ t: "estado", p: arr(p.pos), y: +p.yaw.toFixed(3), x: +p.pitch.toFixed(3), c: p.crouching ? 1 : 0, v: j.vivo ? 1 : 0 });
+        if (j) enviar({ t: "estado", p: arr(p.pos), y: +p.yaw.toFixed(3), x: +p.pitch.toFixed(3), c: p.crouching ? 1 : 0, v: j.vivo ? 1 : 0, a: (mp.colete ? 1 : 0) | (mp.capacete ? 2 : 0) });
         if (mp.anfitriao) paraTodos({ t: "estados", tempo: +mp.tempo.toFixed(1),
-          j: [...mp.jogadores.values()].map(x => [x.id, ...arr(x.pos), +x.yaw.toFixed(3), +x.pitch.toFixed(3), x.agachado ? 1 : 0, x.vivo ? 1 : 0]),
+          j: [...mp.jogadores.values()].map(x => [x.id, ...arr(x.pos), +x.yaw.toFixed(3), +x.pitch.toFixed(3), x.agachado ? 1 : 0, x.vivo ? 1 : 0, x.armadura | 0]),
           r: mp.refens.map(r => [...arr(r.pos), r.estado, r.lider]),
           m: G.enemies.list.filter(e => e.alive).map(e => [e.id, e.type === "hound" ? 1 : 0, ...arr(e.pos), +(e.yaw || 0).toFixed(2)]) }, mp.meuId);
       }
