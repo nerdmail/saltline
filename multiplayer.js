@@ -53,10 +53,12 @@
   };
   // onde cada time nasce [x, z]
   const BASE_POLICIA = [-32, 6];                       // lado oeste (portão)
-  const POLICIAIS_NA_SALA = [[2, -22], [5, -22]];      // os dois primeiros Policiais já começam com os reféns
+  // a casinha no alto da escada do galpão é a sala dos reféns (chão a 2,6 m de altura)
+  const SALA = { x0: -15.7, x1: -10.3, z0: -27.7, z1: -23.8, chao: 2.6, teto: 5.1, porta: [-11.65, -10.75], altoPorta: 4.45 };
+  const POLICIAIS_NA_SALA = [[-11.1, -25.2], [-11.1, -26.6]];      // os dois primeiros Policiais já começam com os reféns
   const NASCER_TERRORISTAS = [[27.4, 11.6], [20.9, 14.7], [23.4, 23.2], [18, 24.4], [27.2, -12.6], [29, 14], [27, 8], [18, 22.2]];   // espalhados no lado leste (cais)
   // posições no mapa [x, z]. O galpão (sala dos reféns) vai de x -16 a 12 e de z -28 a -11.
-  const REFENS = [[-10, -22], [-7, -22.6], [-4, -22]];
+  const REFENS = [[-14.3, -26.0], [-13.1, -26.3], [-12.0, -25.9]];      // dentro da sala
   // quem são os reféns, na ordem das posições acima: cor da roupa, cabelo, tamanho e ritmo de caminhada
   const CIVIS = [
     { quem: "mulher",  camisa: 0x8c2f4f, calca: 0x232b3a, cabelo: 0x2e1a10, pele: 0xc08a68, cabeloLongo: true, escala: 0.95, vel: 1 },
@@ -68,11 +70,11 @@
   const RESGATES = [[-32, 6, "Portão oeste"], [-32, 20, "Portão sudoeste"], [-32, -8, "Portão noroeste"], [-26.6, -15, "Guarita noroeste"],
     [-16, 22, "Pátio sudoeste"], [-7.8, 21.4, "Pátio sul"], [6, 26, "Cerca sul"], [14.2, 16.4, "Pátio sudeste"], [-19, -1.4, "Entrada do pátio"], [-10.3, 12.5, "Centro do pátio"]];
   const RAIO_RESGATE = 4;
-  const PASSAGENS = [            // saídas secretas: entrou em "de", sai sempre em "para"
-    { de: [-13.5, -22], para: [-16, 26] },
-    { de: [-6, -26],    para: [14.2, 16.4] },
-    { de: [6, -26],     para: [27.2, -12.6] },
-    { de: [9.5, -22],   para: [-26.6, -15] },
+  const PASSAGENS = [            // portas secretas nas paredes da sala: "de" é onde se para em frente à porta, "para" é onde ela sai
+    { de: [-15.0, -25.0], parede: "oeste", para: [-16, 26],      nome: "Pátio sudoeste" },
+    { de: [-15.0, -26.7], parede: "oeste", para: [14.2, 16.4],   nome: "Pátio sudeste" },
+    { de: [-14.6, -27.0], parede: "norte", para: [27.2, -12.6],  nome: "Cais norte" },
+    { de: [-11.4, -27.0], parede: "norte", para: [-26.6, -15],   nome: "Guarita noroeste" },
   ];
   // armas: cada jogador nasce sem arma, com o conjunto do seu time no chão ao redor. Só dá para carregar uma.
   // Todas tiram o mesmo dano por tiro; muda o pente e o modo (auto, semi, rajada). rpm = tiros por minuto (máx. 720).
@@ -242,11 +244,14 @@
       case "acertoRefem":
         if (mp.refens[m.i]) ferirRefem(mp.refens[m.i], 1, id);       // o cliente só avisa tiro na cabeça
         break;
+      case "porta":
+        if (mp.fase === "valendo" && j.vivo) paraTodos({ t: "porta", aberta: !!m.aberta });
+        break;
       case "armaPeguei":
         if (mp.armasChao.has(m.id) && j.vivo) paraTodos({ t: "armaPega", id: m.id, por: id });
         break;
       case "armaSolta":
-        if (ARMAS[m.arma] && Array.isArray(m.p)) paraTodos({ t: "armaChao", d: [mp.proxId++, m.arma, +m.p[0], +m.p[1]], por: id });
+        if (ARMAS[m.arma] && Array.isArray(m.p)) paraTodos({ t: "armaChao", d: [mp.proxId++, m.arma, +m.p[0], +m.p[1], +m.p[2] || 0], por: id });
         break;
       case "passo":
         paraTodos({ t: "passo", p: m.p, id }, id);
@@ -369,6 +374,7 @@
         if (m.por === mp.meuId && !mp.arma) { mp.arma = it.arma; mp.rajada = 0; mp.cadT = 0.3; try { G.weapon.reset(); } catch {} tocar("reload_magin"); G.hud.message(ARMAS[it.arma].nome + " · G solta", 2.5); }
         break;
       }
+      case "porta": aplicarPorta(!!m.aberta); break;
       case "armaChao":
         porArmaNoChao(m.d);
         if (m.por === mp.meuId) mp.armasChao.get(m.d[0]).espera = true;   // quem soltou só pega de novo depois de se afastar
@@ -548,7 +554,7 @@
       for (let k = 0; k < quantos; k++) { const c = cantos[k % cantos.length], v = Math.floor(k / cantos.length) * 1.5, q = pisavel(c[0] + v, c[1] + v); pts.push([q[0], 0, q[1], yaw]); }
       return pts;
     }
-    for (const c of POLICIAIS_NA_SALA) if (pts.length < quantos) { const q = pisavel(c[0], c[1]); pts.push([q[0], 0, q[1], Math.PI / 2]); }
+    for (const c of POLICIAIS_NA_SALA) if (pts.length < quantos) pts.push([c[0], SALA.chao, c[1], Math.PI / 2]);
     for (let anel = 0; anel < 4 && pts.length < quantos; anel++)      // o resto dos Policiais, na base
       for (let k = 0; k < Math.max(1, anel * 6) && pts.length < quantos; k++) {
         const ang = k / Math.max(1, anel * 6) * Math.PI * 2, x = BASE_POLICIA[0] + Math.cos(ang) * anel * 1.5, z = BASE_POLICIA[1] + Math.sin(ang) * anel * 1.5;
@@ -560,7 +566,7 @@
   }
   function zerarRefens() {
     mp.refens.forEach((r, i) => {
-      r.pos.set(REFENS[i][0], 0, REFENS[i][1]); r.cur.copy(r.pos); r.vel.set(0, 0, 0); r.casa.copy(r.pos);
+      r.pos.set(REFENS[i][0], SALA.chao, REFENS[i][1]); r.cur.copy(r.pos); r.vel.set(0, 0, 0); r.casa.copy(r.pos); r.trilha = [];
       r.estado = 0; r.lider = null; r.hp = dif().refem.tirosCabeca; r.jaSolto = false; r.caminho = null; r.caminhoT = 0;
       r.passoT = Math.random(); r.passo = [0, 0]; r.ladoT = 0; r.lado = 1; r.tiroT = 1.5; r.noChao = true;
     });
@@ -613,6 +619,7 @@
     mp.resgateVisto = null; discoResgate.visible = false; painel.visible = false;
     fecharOverlay(); esconderMenuSolo();
     if (!mp.anfitriao) { try { G.enemies.clear(); } catch {} mp.marionetes.clear(); }
+    prepararSala(); aplicarPorta(false);
     zerarRefens(); limparExplosivos(); limparArmas();
     for (const d of m.armas || []) porArmaNoChao(d);
     for (const d of m.itens || []) {
@@ -1051,26 +1058,22 @@
   }
   // anfitrião: reféns não ficam parados; o solto segue quem o soltou, desvia de quem mira nele e atira
   function moverRefens(dt) {
-    const nav = G.physics.nav, ia = dif().refem;
+    const ia = dif().refem;
     for (const r of mp.refens) {
       if (r.estado > 1) continue;
-      let wx = 0, wz = 0, ancora = r.casa, folga = 2;
+      let wx = 0, wz = 0, ancora = r.casa, folga = 1.2;
       if (r.estado === 1) {
         const lider = mp.jogadores.get(r.lider);
         if (!lider || !lider.vivo) { r.estado = 0; r.lider = null; r.casa.copy(r.pos); paraTodos({ t: "refem", i: r.i, ev: "largado" }); continue; }
         const lp = posDe(lider), dx = lp.x - r.pos.x, dz = lp.z - r.pos.z, d = Math.hypot(dx, dz);
         ancora = lp; folga = 2.6;
-        if (d > 9) { r.pos.set(lp.x - dx / d * 1.2, lp.y, lp.z - dz / d * 1.2); r.caminho = null; }   // o líder usou uma passagem
-        else if (d > 1.7) {
-          let alvo = lp, livre = true;
-          r.caminhoT -= dt;
-          try { livre = nav.clearLine(r.pos, lp); } catch {}
-          if (!livre) {
-            if (r.caminhoT <= 0 || !r.caminho) { r.caminhoT = 0.5; try { r.caminho = nav.findPath(r.pos, lp); } catch { r.caminho = null; } }
-            while (r.caminho && r.caminho.length > 1 && Math.hypot(r.caminho[0].x - r.pos.x, r.caminho[0].z - r.pos.z) < 0.6) r.caminho.shift();
-            if (r.caminho && r.caminho.length) alvo = r.caminho[0];
-          }
-          const ax = alvo.x - r.pos.x, az = alvo.z - r.pos.z, ad = Math.hypot(ax, az) || 1;
+        if (d > 9) { r.pos.set(lp.x - dx / d * 1.2, lp.y, lp.z - dz / d * 1.2); r.trilha.length = 0; }   // o líder usou uma saída secreta
+        else if (Math.hypot(d, lp.y - r.pos.y) <= 1.7) r.trilha.length = 0;      // chegou (contando a altura: na escada o líder fica abaixo)
+        else {                                         // segue a trilha por onde o líder passou (funciona na porta e na escada)
+          const ult = r.trilha[r.trilha.length - 1];
+          if (!ult || Math.hypot(lp.x - ult.x, lp.z - ult.z) > 0.5) r.trilha.push(lp.clone());
+          while (r.trilha.length > 1 && Math.hypot(r.trilha[0].x - r.pos.x, r.trilha[0].z - r.pos.z) < 0.55) r.trilha.shift();
+          const al = r.trilha[0], ax = al.x - r.pos.x, az = al.z - r.pos.z, ad = Math.hypot(ax, az) || 1;
           wx = ax / ad; wz = az / ad;
         }
       }
@@ -1095,8 +1098,13 @@
       const wl = Math.hypot(wx, wz), vel = CFG.velRefem * r.civil.vel;
       if (wl > 1) { wx /= wl; wz /= wl; }
       r.vel.x = wx * vel; r.vel.z = wz * vel; r.vel.y -= 20 * dt;
+      const yAntes = r.pos.y;
       let res = null; try { res = G.physics.moveCapsule(r.pos, r.vel, dt, 0.3, 1.7 * r.civil.escala, r.noChao); } catch {}
       r.noChao = !res || !!res.onGround;
+      try {                                             // não atravessa piso fino (plataforma, degraus) ao cair
+        const piso = G.physics.groundHeight(r.pos.x, r.pos.z, yAntes + 0.35);
+        if (r.pos.y < piso && yAntes >= piso - 0.35) { r.pos.y = piso; r.noChao = true; }
+      } catch {}
       if (r.noChao && r.vel.y < 0) r.vel.y = 0;
       if (r.pos.y < -1) { r.pos.y = 0; r.vel.y = 0; }
       if (r.estado === 1) atirarRefem(r, dt, ia);
@@ -1117,7 +1125,7 @@
         if (Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z) > 2.2 || Math.abs(b.pos.y - p.pos.y) > 2.5) continue;
         mp.desarmarT = G.input.down("interact") ? mp.desarmarT + dt / CFG.tempoDesarmar : Math.max(0, mp.desarmarT - dt * 2);
         if (mp.desarmarT >= 1) { mp.desarmarT = 0; enviar({ t: "desarmei", id: b.id }); }
-        return G.hud.setPrompt("Desarmar bomba · " + Math.ceil(b.t) + "s", Math.min(1, mp.desarmarT));
+        G.hud.setPrompt("Desarmar bomba · " + Math.ceil(b.t) + "s", Math.min(1, mp.desarmarT)); return true;
       }
     mp.desarmarT = 0;
     let perto = -1, dist = 2.2;
@@ -1127,55 +1135,134 @@
         const d = Math.hypot(r.cur.x - p.pos.x, r.cur.z - p.pos.z);
         if (d < dist && Math.abs(r.cur.y - p.pos.y) < 2.5) { dist = d; perto = r.i; }
       }
-    if (perto < 0) { mp.pegando = -1; mp.pegarT = 0; return G.hud.setPrompt(null); }
+    if (perto < 0) { mp.pegando = -1; mp.pegarT = 0; G.hud.setPrompt(null); return false; }
     if (mp.pegando !== perto) { mp.pegando = perto; mp.pegarT = 0; }
     mp.pegarT = G.input.down("interact") ? mp.pegarT + dt / CFG.tempoPegar : Math.max(0, mp.pegarT - dt * 2);
     if (mp.pegarT >= 1) { mp.pegarT = 0; enviar({ t: "pegar", i: perto }); }
-    G.hud.setPrompt("Soltar refém", Math.min(1, mp.pegarT));
+    G.hud.setPrompt("Soltar refém", Math.min(1, mp.pegarT)); return true;
   }
   // saídas secretas do galpão: pisou no círculo, aparece sempre no mesmo destino
-  function passagens(dt) {
-    const p = G.player;
+  // E perto da porta da sala abre ou fecha; E em frente a uma porta secreta leva sempre ao mesmo lugar do mapa
+  function pertoDaPorta() {
+    const p = G.player, S = SALA;
+    return Math.abs(p.pos.y - S.chao) < 1.2 && Math.hypot(p.pos.x - (S.porta[0] + S.porta[1]) / 2, p.pos.z - S.z1) < 1.3;
+  }
+  function portas(dt) {
+    const p = G.player, S = SALA;
     mp.passagemT -= dt;
-    if (mp.passagemT > 0 || !p.alive || mp.fase !== "valendo") return;
-    PASSAGENS.forEach((s, n) => {
-      if (Math.hypot(p.pos.x - s.de[0], p.pos.z - s.de[1]) > 0.9 || p.pos.y > 1.5) return;
-      p.pos.set(s.para[0], 0.05, s.para[1]); p.vel.set(0, 0, 0);
-      mp.passagemT = 2;
-      (G.render.post || {}).flash = 0.6;
-      tocar("objective"); G.hud.message("Saída " + (n + 1), 2);
+    if (!p.alive || mp.fase !== "valendo" || Math.abs(p.pos.y - S.chao) > 1.2) return;
+    const apertou = G.input.pressed("interact") && mp.passagemT <= 0;
+    if (pertoDaPorta()) {
+      G.hud.setPrompt(portaAberta ? "Fechar a porta" : "Abrir a porta", 0);
+      if (apertou) { mp.passagemT = 0.5; enviar({ t: "porta", aberta: !portaAberta }); }
+      return;
+    }
+    if (p.pos.x < S.x0 || p.pos.x > S.x1 || p.pos.z < S.z0 || p.pos.z > S.z1) return;      // portas secretas: só de dentro
+    for (const [n, s] of PASSAGENS.entries()) {
+      if (Math.hypot(p.pos.x - s.de[0], p.pos.z - s.de[1]) > 1.1) continue;
+      G.hud.setPrompt("Saída " + (n + 1) + " · " + s.nome, 0);
+      if (apertou) {
+        p.pos.set(s.para[0], 0.05, s.para[1]); p.vel.set(0, 0, 0);
+        mp.passagemT = 1.5; (G.render.post || {}).flash = 0.6;
+        tocar("objective"); G.hud.message("Saída " + (n + 1) + " · " + s.nome, 2.5);
+      }
+      return;
+    }
+  }
+  /* ------------------------------------------------------- sala dos reféns */
+  // A casinha já existe no mapa, mas era um bloco maciço com a porta só desenhada. Na primeira rodada ela vira
+  // uma sala de verdade: paredes com colisão no lugar do bloco, vão da porta recortado na geometria do jogo e a
+  // chapa da porta girando na dobradiça.
+  let salaPronta = false, portaAberta = false, portaAnim = 0, portaRef = null, portaGeo = null, portaIni = 0, portaOrig = null;
+  function prepararSala() {
+    if (salaPronta) return; salaPronta = true;
+    const T = G.THREE, fis = G.physics, S = SALA, perto = (a, b) => Math.abs(a - b) < 0.12;
+    const macico = fis.boxes.find(b => perto(b.min.x, S.x0) && perto(b.max.x, S.x1) && perto(b.min.z, S.z0) && perto(b.max.z, S.z1) && b.max.y - b.min.y > 2);
+    if (macico) fis.removeBox(macico);
+    const parede = (x0, y0, z0, x1, y1, z1) => fis.addBox([x0, y0, z0], [x1, y1, z1], { surface: "metal" });
+    parede(S.x0, S.chao, S.z0, S.x0 + 0.1, S.teto, S.z1);                    // oeste
+    parede(S.x1 - 0.1, S.chao, S.z0, S.x1, S.teto, S.z1);                    // leste
+    parede(S.x0, S.chao, S.z0, S.x1, S.teto, S.z0 + 0.1);                    // norte
+    parede(S.x0, S.chao, S.z1 - 0.1, S.porta[0], S.teto, S.z1);              // frente, à esquerda da porta
+    parede(S.porta[1], S.chao, S.z1 - 0.1, S.x1, S.teto, S.z1);              // frente, à direita
+    parede(S.porta[0], S.altoPorta, S.z1 - 0.1, S.porta[1], S.teto, S.z1);   // acima da porta
+    parede(S.x0, S.teto - 0.1, S.z0, S.x1, S.teto, S.z1);                    // teto
+    fecharVao(true);
+    const identidade = new T.Matrix4();
+    G.scene.traverse(o => {
+      if (!o.isMesh || o.isInstancedMesh || !o.parent || o.parent.name !== "level-merged" || !o.matrixWorld.equals(identidade)) return;
+      const nome = o.material.name, pos = o.geometry.attributes.position;
+      if (!["paint_white", "glass_dirty", "paint_grey"].includes(nome) || pos.count % 24) return;
+      for (let c = 0; c < pos.count; c += 24) {             // a geometria é feita de caixas de 24 vértices
+        let ax = 1e9, bx = -1e9, ay = 1e9, by = -1e9, az = 1e9, bz = -1e9;
+        for (let i = c; i < c + 24; i++) { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i); ax = Math.min(ax, x); bx = Math.max(bx, x); ay = Math.min(ay, y); by = Math.max(by, y); az = Math.min(az, z); bz = Math.max(bz, z); }
+        if (az < S.z1 - 0.12 || bz > S.z1 + 0.08 || ay < S.chao - 0.05) continue;       // só o que está na parede da frente
+        if (nome === "paint_grey" && perto(ax, S.porta[0]) && perto(bx, S.porta[1])) {      // a chapa da porta
+          portaGeo = o.geometry; portaIni = c; portaOrig = Array.from({ length: 72 }, (_, k) => pos.array[c * 3 + k]);
+        } else if (nome !== "paint_grey" && bx - ax > 4 && by < S.altoPorta + 0.05) {       // parede baixa e vidro: abre o vão
+          for (let i = c; i < c + 24; i++) if (pos.getX(i) > S.porta[0]) pos.setX(i, S.porta[0]);
+          pos.needsUpdate = true;
+          const resto = new T.Mesh(new T.BoxGeometry(S.x1 - S.porta[1], by - ay, bz - az), o.material);
+          resto.position.set((S.x1 + S.porta[1]) / 2, (ay + by) / 2, (az + bz) / 2); resto.receiveShadow = true; G.scene.add(resto);
+        }
+      }
     });
+  }
+  function fecharVao(fechar) {
+    const fis = G.physics, S = SALA;
+    if (fechar && !portaRef) { fis.addBox([S.porta[0], S.chao, S.z1 - 0.1], [S.porta[1], S.altoPorta, S.z1], { surface: "metal" }); portaRef = fis.boxes[fis.boxes.length - 1]; }
+    else if (!fechar && portaRef) { fis.removeBox(portaRef); portaRef = null; }
+  }
+  function aplicarPorta(aberta) {
+    if (aberta === portaAberta) return;
+    portaAberta = aberta; fecharVao(!aberta);
+    tocar("container_bang", { pos: new V3(-11.2, 3.5, SALA.z1), gain: 0.4 });
+  }
+  function animarPorta(dt) {
+    const alvo = portaAberta ? 1 : 0;
+    if (portaAnim === alvo || !portaGeo) return;
+    portaAnim += Math.sign(alvo - portaAnim) * Math.min(Math.abs(alvo - portaAnim), dt * 2.5);
+    const pos = portaGeo.attributes.position, a = portaAnim * 1.65, co = Math.cos(a), si = Math.sin(a), hx = SALA.porta[1], hz = SALA.z1 - 0.02;
+    for (let i = 0; i < 24; i++) {                        // gira a chapa para dentro, em torno da dobradiça do lado leste
+      const dx = portaOrig[i * 3] - hx, dz = portaOrig[i * 3 + 2] - hz;
+      pos.setXYZ(portaIni + i, hx + dx * co - dz * si, portaOrig[i * 3 + 1], hz + dx * si + dz * co);
+    }
+    pos.needsUpdate = true;
   }
   function montarCenario() {
     const T = G.THREE; cenario = new T.Group(); cenario.visible = false;
-    const disco = (x, z, raio, cor, op, pai = cenario) => {
-      const m = new T.Mesh(new T.CylinderGeometry(raio, raio, 0.04, 28, 1, true), new T.MeshBasicMaterial({ color: cor, transparent: true, opacity: op, side: T.DoubleSide, depthWrite: false }));
-      m.scale.y = 12; m.position.set(x, 0.25, z); pai.add(m);
-      const chao = new T.Mesh(new T.CylinderGeometry(raio, raio, 0.02, 28), new T.MeshBasicMaterial({ color: cor, transparent: true, opacity: op * 0.5, depthWrite: false }));
-      chao.position.set(x, 0.03, z); pai.add(chao);
-    };
+    // portas secretas: chapa de aço com batente e placa com o número e o destino, nos materiais do próprio jogo
+    const aco = G.mats.get("steel_dark"), batente = G.mats.get("steel_galv"), faixa = G.mats.get("hazard_stripes"), S = SALA;
+    const caixa = (pai, mat, w, h, d, x, y, z) => { const m = new T.Mesh(new T.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.receiveShadow = true; pai.add(m); return m; };
     PASSAGENS.forEach((s, n) => {
-      disco(s.de[0], s.de[1], 0.8, 0xffb347, 0.5);
-      disco(s.para[0], s.para[1], 0.8, 0xffb347, 0.18);
-      for (const [pt, op] of [[s.de, 1], [s.para, 0.6]]) {
-        const pl = criarPlaca(String(n + 1), "#ffb347", true); pl.material.opacity = op;
-        pl.position.set(pt[0], 1.5, pt[1]); pl.scale.set(1.6, 0.4, 1); cenario.add(pl);
-      }
+      const g = new T.Group(), oeste = s.parede === "oeste";
+      caixa(g, aco, 0.95, 2.0, 0.05, 0, 1.0, 0); caixa(g, batente, 1.1, 0.08, 0.08, 0, 2.04, 0);
+      caixa(g, batente, 0.08, 2.0, 0.08, -0.52, 1.0, 0); caixa(g, batente, 0.08, 2.0, 0.08, 0.52, 1.0, 0);
+      caixa(g, faixa, 0.95, 0.12, 0.06, 0, 0.1, 0); caixa(g, batente, 0.04, 0.16, 0.06, 0.36, 1.0, 0.04);      // rodapé listrado e maçaneta
+      const cv = document.createElement("canvas"); cv.width = 512; cv.height = 128; const c = cv.getContext("2d");
+      c.fillStyle = "#14181b"; c.fillRect(0, 0, 512, 128); c.strokeStyle = "#ffb347"; c.lineWidth = 6; c.strokeRect(4, 4, 504, 120);
+      c.fillStyle = "#ffb347"; c.textBaseline = "middle"; c.font = '900 84px "Big Shoulders Display", Impact, sans-serif'; c.fillText(String(n + 1), 26, 68);
+      c.fillStyle = "#e8e4da"; c.font = '600 40px "Barlow Condensed", Arial, sans-serif'; c.fillText(s.nome.toUpperCase(), 96, 68);
+      const placa = new T.Mesh(new T.PlaneGeometry(1.0, 0.25), new T.MeshBasicMaterial({ map: new T.CanvasTexture(cv), toneMapped: false }));
+      placa.position.set(0, 2.24, 0.03); g.add(placa);
+      if (oeste) { g.position.set(S.x0 + 0.13, S.chao, s.de[1]); g.rotation.y = Math.PI / 2; } else g.position.set(s.de[0], S.chao, S.z0 + 0.13);
+      cenario.add(g);
     });
+    // ponto de resgate: moldura listrada pintada no chão
     discoResgate = new T.Group(); discoResgate.visible = false; cenario.add(discoResgate);
-    disco(0, 0, RAIO_RESGATE, 0x4aa3ff, 0.3, discoResgate);
-    // painel na parede oeste da sala dos reféns: mapa do porto e o nome do ponto de resgate da rodada
+    const R = RAIO_RESGATE;
+    for (const [w, d, x, z] of [[2 * R, 0.3, 0, -R], [2 * R, 0.3, 0, R], [0.3, 2 * R, -R, 0], [0.3, 2 * R, R, 0]]) caixa(discoResgate, faixa, w, 0.03, d, x, 0.03, z);
+    // painel na parede leste da sala dos reféns: mapa do porto e o nome do ponto de resgate da rodada
     const tela = document.createElement("canvas"); tela.width = 1024; tela.height = 640;
-    painel = new T.Mesh(new T.PlaneGeometry(4.6, 2.875), new T.MeshBasicMaterial({ map: new T.CanvasTexture(tela), toneMapped: false }));
-    painel.rotation.y = Math.PI / 2; painel.visible = false; cenario.add(painel);
-    let xParede = -15.8; try { const h = G.physics.raycast(new V3(-9, 3.4, -24.5), new V3(-1, 0, 0), 30); if (h && h.point) xParede = h.point.x; } catch {}
-    painel.position.set(xParede + 0.06, 3.4, -24.5);
+    painel = new T.Mesh(new T.PlaneGeometry(2.5, 1.5625), new T.MeshBasicMaterial({ map: new T.CanvasTexture(tela), toneMapped: false }));
+    painel.rotation.y = -Math.PI / 2; painel.visible = false; cenario.add(painel);
+    painel.position.set(S.x1 - 0.13, S.chao + 1.35, -25.9);
     G.scene.add(cenario);
     explosivos = new T.Group(); explosivos.visible = false; G.scene.add(explosivos);
     armasGrupo = new T.Group(); armasGrupo.visible = false; G.scene.add(armasGrupo);
     nomeArmaOriginal = G.weapon.name;
     montarModelos();
-    mp.refens = REFENS.map((_, i) => ({ i, pos: new V3(), cur: new V3(), vel: new V3(), estado: 0, lider: null, hp: 1, yaw: Math.PI / 2, casa: new V3(REFENS[i][0], 0, REFENS[i][1]),
+    mp.refens = REFENS.map((_, i) => ({ i, pos: new V3(), cur: new V3(), vel: new V3(), estado: 0, lider: null, hp: 1, yaw: Math.PI / 2, casa: new V3(REFENS[i][0], SALA.chao, REFENS[i][1]), trilha: [],
       civil: CIVIS[i % CIVIS.length], boneco: criarBoneco({ armado: false, civil: CIVIS[i % CIVIS.length] }) }));
     zerarRefens();
   }
@@ -1324,14 +1411,15 @@
 
   /* -------------------------------------------------------------------- armas */
   let armasGrupo = null, nomeArmaOriginal = "";
-  function sortearArmas(nasc) {                 // anfitrião: um conjunto completo em volta de onde cada jogador nasce
-    const lista = [];
+  function sortearArmas(nasc) {                 // anfitrião: um conjunto completo perto de onde cada jogador nasce
+    const lista = []; let naSala = 0;
     for (const [id, pt] of Object.entries(nasc)) {
       const j = mp.jogadores.get(id); if (!j) continue;
-      const chaves = Object.keys(ARMAS).filter(k => ARMAS[k].time === j.time);
+      const chaves = Object.keys(ARMAS).filter(k => ARMAS[k].time === j.time), dentro = pt[1] > 1, fila = dentro ? naSala++ : 0;
       chaves.forEach((k, n) => {
+        if (dentro) return lista.push([mp.proxId++, k, +(-15.1 + n * 0.62).toFixed(2), +(-24.4 - fila * 0.75).toFixed(2), SALA.chao]);   // fileiras junto à parede da frente
         const ang = n / chaves.length * Math.PI * 2, q = pisavel(pt[0] + Math.cos(ang) * 2, pt[2] + Math.sin(ang) * 2);
-        lista.push([mp.proxId++, k, +q[0].toFixed(2), +q[1].toFixed(2)]);
+        lista.push([mp.proxId++, k, +q[0].toFixed(2), +q[1].toFixed(2), 0]);
       });
     }
     return lista;
@@ -1350,8 +1438,8 @@
     giro.position.y = 0.5; g.add(giro);
     const anel = new T.Mesh(new T.RingGeometry(0.3, 0.38, 28), new T.MeshBasicMaterial({ color: TIMES[a.time].cor, transparent: true, opacity: 0.75, side: T.DoubleSide, depthWrite: false }));
     anel.rotation.x = -Math.PI / 2; anel.position.y = 0.04; g.add(anel);
-    g.position.set(d[2], 0, d[3]); armasGrupo.add(g);
-    mp.armasChao.set(d[0], { id: d[0], arma: d[1], pos: new V3(d[2], 0, d[3]), malha: g, giro, anel, pedido: false });
+    g.position.set(d[2], d[4] || 0, d[3]); armasGrupo.add(g);
+    mp.armasChao.set(d[0], { id: d[0], arma: d[1], pos: new V3(d[2], d[4] || 0, d[3]), malha: g, giro, anel, pedido: false });
   }
   function tirarArmaDoChao(id) {
     const it = mp.armasChao.get(id); if (!it) return;
@@ -1366,7 +1454,7 @@
   function soltarArma() {
     if (!mp.arma || !emRodada()) return;
     const p = G.player;
-    enviar({ t: "armaSolta", arma: mp.arma, p: [+(p.pos.x - Math.sin(p.yaw) * 0.9).toFixed(2), +(p.pos.z - Math.cos(p.yaw) * 0.9).toFixed(2)] });
+    enviar({ t: "armaSolta", arma: mp.arma, p: [+(p.pos.x - Math.sin(p.yaw) * 0.9).toFixed(2), +(p.pos.z - Math.cos(p.yaw) * 0.9).toFixed(2), +p.pos.y.toFixed(2)] });
     mp.arma = null; mp.rajada = 0; mp.semPegarT = 0.5; tocar("reload_magout");
   }
   function facada() {
@@ -1412,14 +1500,14 @@
       for (const it of mp.armasChao.values()) {
         const d = Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z);
         if (it.espera) { if (d > 1.8) it.espera = false; continue; }
-        if (!it.pedido && d < 1.1 && p.pos.y < 2) { it.pedido = true; mp.semPegarT = 0.4; enviar({ t: "armaPeguei", id: it.id }); break; }
+        if (!it.pedido && d < 0.8 && Math.abs(p.pos.y - it.pos.y) < 1.5) { it.pedido = true; mp.semPegarT = 0.4; enviar({ t: "armaPeguei", id: it.id }); break; }
       }
-    let perto = null, dPerto = 2.4;
+    let perto = null, dPerto = 1.5;
     for (const it of mp.armasChao.values()) {
       const d = Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z);
       it.giro.visible = d < 16;                       // de longe fica só o anel, para não pesar
       it.giro.rotation.y += dt * 1.2;
-      if (d < dPerto) { dPerto = d; perto = it; }
+      if (d < dPerto && Math.abs(p.pos.y - it.pos.y) < 1.5) { dPerto = d; perto = it; }
     }
     if (perto && p.alive) G.hud.message(ARMAS[perto.arma].nome + (a ? " · solte a sua com G para trocar" : ""), 0.3);
   }
@@ -1518,7 +1606,10 @@
       }
       if (mp.fase === "valendo" && !mp.anfitriao) mp.tempo -= dt;
       if (j) { j.vivo = p.alive && j.vivo; j.pos.copy(p.pos); j.cur.copy(p.pos); j.yaw = p.yaw; j.pitch = p.pitch; j.agachado = p.crouching; }
-      armasLocais(dt); interagir(dt); passagens(dt); explosivosLocais(dt);
+      armasLocais(dt);
+      if (pertoDaPorta()) { G.hud.setPrompt(null); portas(dt); }       // colado na porta, ela tem prioridade sobre o refém
+      else if (!interagir(dt)) portas(dt);
+      animarPorta(dt); explosivosLocais(dt);
       if (mp.anfitriao) logicaDoAnfitriao(dt); else moverMarionetes(dt);
       atualizarBonecos(dt); atualizarObjetivo();
       mp.envioT -= dt;
