@@ -22,7 +22,6 @@
     tempoEntreRodadas: 6,
     tempoPegar: 1.2,           // segundos segurando E para soltar um refém
     velRefem: 3.6,             // metros por segundo
-    vidaRefem: 100,
     maxJogadores: 10,
     danoCabeca: 2,             // multiplicador de tiro na cabeça
     // explosivos: só os Terroristas pegam e usam; ficam espalhados em pontos sorteados a cada rodada
@@ -34,12 +33,17 @@
     peerjs: "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js",
     prefixo: "saltline-sala-",
   };
-  // tempo da rodada (s), máquinas no começo, máquinas extras a cada refém solto ou salvo, teto de máquinas vivas
+  // tempo da rodada (s), máquinas no começo, máquinas extras a cada refém solto ou salvo, teto de máquinas vivas.
+  // refem: tiros na cabeça para matar, chance de acertar cada tiro, segundos entre tiros, dano por tiro, o quanto desvia (0 a 1)
   const DIFICULDADES = {
-    facil:   { nome: "Fácil",       tempo: 210, patrulha: { gull: 1, hound: 0 }, onda: { gull: 1, hound: 0 }, max: 3 },
-    medio:   { nome: "Médio",       tempo: 180, patrulha: { gull: 2, hound: 1 }, onda: { gull: 1, hound: 1 }, max: 5 },
-    dificil: { nome: "Difícil",     tempo: 150, patrulha: { gull: 3, hound: 2 }, onda: { gull: 2, hound: 1 }, max: 8 },
-    treta:   { nome: "Muita treta", tempo: 120, patrulha: { gull: 4, hound: 3 }, onda: { gull: 3, hound: 2 }, max: 12 },
+    facil:   { nome: "Fácil",       tempo: 210, patrulha: { gull: 1, hound: 0 }, onda: { gull: 1, hound: 0 }, max: 3,
+               refem: { tirosCabeca: 1, precisao: 0.12, cadencia: 1.6, dano: 8,  esquiva: 0.3 } },
+    medio:   { nome: "Médio",       tempo: 180, patrulha: { gull: 2, hound: 1 }, onda: { gull: 1, hound: 1 }, max: 5,
+               refem: { tirosCabeca: 2, precisao: 0.2,  cadencia: 1.2, dano: 10, esquiva: 0.5 } },
+    dificil: { nome: "Difícil",     tempo: 150, patrulha: { gull: 3, hound: 2 }, onda: { gull: 2, hound: 1 }, max: 8,
+               refem: { tirosCabeca: 3, precisao: 0.32, cadencia: 0.9, dano: 12, esquiva: 0.75 } },
+    treta:   { nome: "Muita treta", tempo: 120, patrulha: { gull: 4, hound: 3 }, onda: { gull: 3, hound: 2 }, max: 12,
+               refem: { tirosCabeca: 4, precisao: 0.45, cadencia: 0.7, dano: 14, esquiva: 1 } },
   };
   const TIMES = {
     p: { nome: "Policiais", curto: "POL", cor: 0x4aa3ff, css: "#6fb6ff", yaw: -Math.PI / 2,
@@ -207,7 +211,7 @@
         break;
       }
       case "acertoRefem":
-        if (mp.refens[m.i]) ferirRefem(mp.refens[m.i], Math.min(120, +m.q || 0), id);
+        if (mp.refens[m.i]) ferirRefem(mp.refens[m.i], 1, id);       // o cliente só avisa tiro na cabeça
         break;
       case "pegueiItem": {
         const it = mp.itens.get(m.id);
@@ -306,7 +310,7 @@
       case "baixa": {
         const v = mp.jogadores.get(m.quem), k = m.por && mp.jogadores.get(m.por);
         if (v && v.id !== mp.meuId) v.vivo = false;
-        if (v) G.hud.feed(k ? `<b>${esc(k.nome)}</b> eliminou <b>${esc(v.nome)}</b>` : `<b>${esc(v.nome)}</b> caiu para as máquinas`);
+        if (v) G.hud.feed(k ? `<b>${esc(k.nome)}</b> eliminou <b>${esc(v.nome)}</b>` : m.por === "refem" ? `<b>${esc(v.nome)}</b> foi abatido por um refém` : `<b>${esc(v.nome)}</b> caiu para as máquinas`);
         break;
       }
       case "feed": G.hud.feed(m.html); break;
@@ -442,7 +446,7 @@
       <div class="mp-dif"><span>Dificuldade</span>${mp.anfitriao
         ? `<div class="seg">${Object.entries(DIFICULDADES).map(([k, v]) => `<button data-mp="dif-${k}" aria-pressed="${k === mp.dificuldade}">${v.nome}</button>`).join("")}</div>`
         : `<b>${d.nome}</b>`}</div>
-      <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times. Vence quem fizer ${CFG.rodadasParaVencer} rodadas. O galpão tem 4 saídas secretas numeradas; cada uma leva sempre ao mesmo lugar. Só os Terroristas pegam os explosivos espalhados pelo mapa.</p>
+      <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times. Vence quem fizer ${CFG.rodadasParaVencer} rodadas. Refém só morre com tiro na cabeça e, depois de solto, anda armado e atira nos Terroristas. O galpão tem 4 saídas secretas numeradas; cada uma leva sempre ao mesmo lugar. Só os Terroristas pegam os explosivos espalhados pelo mapa.</p>
       <div class="mp-acoes">
         ${mp.anfitriao ? `<button class="btn primary" data-mp="comecar">Começar partida</button>`
           : `<span class="mp-espera">${emAndamento ? "Partida em andamento — você entra na próxima rodada" : "Aguardando o anfitrião começar"}</span>`}
@@ -503,8 +507,9 @@
   }
   function zerarRefens() {
     mp.refens.forEach((r, i) => {
-      r.pos.set(REFENS[i][0], 0, REFENS[i][1]); r.cur.copy(r.pos); r.vel.set(0, 0, 0);
-      r.estado = 0; r.lider = null; r.hp = CFG.vidaRefem; r.jaSolto = false; r.caminho = null; r.caminhoT = 0;
+      r.pos.set(REFENS[i][0], 0, REFENS[i][1]); r.cur.copy(r.pos); r.vel.set(0, 0, 0); r.casa.copy(r.pos);
+      r.estado = 0; r.lider = null; r.hp = dif().refem.tirosCabeca; r.jaSolto = false; r.caminho = null; r.caminhoT = 0;
+      r.passoT = Math.random(); r.passo = [0, 0]; r.ladoT = 0; r.lado = 1; r.tiroT = 1.5; r.noChao = true;
     });
   }
   // só o anfitrião
@@ -639,13 +644,15 @@
       peca(corpo, new T.BoxGeometry(0.3, 0.1, 0.3), cabelo, 0, 1.69, 0);
       if (civil.cabeloLongo) peca(corpo, new T.BoxGeometry(0.3, 0.42, 0.1), cabelo, 0, 1.5, 0.13);
       grupo.scale.setScalar(civil.escala);
+      var arma = peca(bracos, new T.BoxGeometry(0.06, 0.1, 0.34), new T.MeshStandardMaterial({ color: 0x0e1012, roughness: 0.5, metalness: 0.6 }), 0, -0.45, -0.22);
+      arma.visible = false;
     }
     grupo.add(corpo);
     const placa = criarPlaca(nome, css); placa.position.y = 2.05; grupo.add(placa);
     if (civil) placa.scale.multiplyScalar(1 / civil.escala);
     grupo.visible = false;
     G.scene.add(grupo);
-    return { grupo, corpo, bracos, placa };
+    return { grupo, corpo, bracos, placa, arma };
   }
   function criarPlaca(texto, css, grande) {
     const T = G.THREE, cv = document.createElement("canvas"); cv.width = 256; cv.height = 64;
@@ -695,6 +702,7 @@
       r.boneco.grupo.visible = r.estado !== 2;
       posar(r.boneco, r.cur, r.yaw || 0, k, r.estado !== 3, false);
       r.boneco.placa.visible = r.estado < 2;
+      r.boneco.arma.visible = r.estado === 1;                 // solto pelo policial, já armado
     }
   }
 
@@ -735,8 +743,8 @@
           const q = (opt.damage || 28) * (h.cabeca ? CFG.danoCabeca : 1);
           G.combat.stats.shots++; G.combat.stats.hits++;
           if (h.j) enviar({ t: "acerto", em: h.j.id, q, de: arr(o) });
-          else enviar({ t: "acertoRefem", i: h.r.i, q });
-          G.hud.hitmarker(h.cabeca ? "weak" : "hit");
+          else if (h.cabeca) enviar({ t: "acertoRefem", i: h.r.i });      // refém só se fere com tiro na cabeça
+          if (h.j || h.cabeca) G.hud.hitmarker(h.cabeca ? "weak" : "hit");
           try { G.fx.sparks(h.ponto, dir.clone().negate(), 5); } catch {}
           tocar("impact_enemy", { pos: h.ponto });
           return { point: h.ponto, normal: dir.clone().negate(), dist: h.dist, surface: "enemy", enemy: null, dir, from: "player" };
@@ -858,30 +866,89 @@
   }
 
   /* ------------------------------------------------------ reféns e passagens */
-  // anfitrião: cada refém solto anda atrás de quem o soltou
+  // anfitrião: terrorista vivo com a mira apontada para perto do refém (para ele desviar)
+  function inimigoMirando(r) {
+    for (const j of mp.jogadores.values()) {
+      if (j.time !== "t" || !j.vivo) continue;
+      const p = posDe(j), dx = r.pos.x - p.x, dz = r.pos.z - p.z, d = Math.hypot(dx, dz);
+      if (d > 40 || d < 0.5) continue;
+      const yaw = j.id === mp.meuId ? G.player.yaw : j.yaw;
+      if ((dx * -Math.sin(yaw) + dz * -Math.cos(yaw)) / d > 0.985) return [-dz / d, dx / d];   // direção de lado
+    }
+    return null;
+  }
+  // anfitrião: refém solto atira no Terrorista mais próximo que estiver à vista; nunca em Policial
+  function atirarRefem(r, dt, ia) {
+    r.tiroT -= dt;
+    if (r.tiroT > 0) return;
+    r.tiroT = ia.cadencia * (0.7 + Math.random() * 0.6);
+    const olho = new V3(r.pos.x, r.pos.y + 1.45 * r.civil.escala, r.pos.z); let alvo = null, dist = 30;
+    for (const j of mp.jogadores.values()) {
+      if (j.time !== "t" || !j.vivo) continue;
+      const p = posDe(j), d = p.distanceTo(r.pos);
+      if (d >= dist) continue;
+      const peito = new V3(p.x, p.y + 1.3, p.z); let visto = false;
+      try { visto = G.physics.lineOfSight(olho, peito); } catch {}
+      if (visto) { dist = d; alvo = { j, peito }; }
+    }
+    if (!alvo) return;
+    const acertou = Math.random() < ia.precisao * (dist < 10 ? 1.4 : dist > 20 ? 0.6 : 1), fim = alvo.peito.clone();
+    if (!acertou) fim.add(new V3((Math.random() - 0.5) * 2.4, (Math.random() - 0.2) * 1.6, (Math.random() - 0.5) * 2.4));
+    paraTodos({ t: "tiro", id: "refem", o: arr(olho), e: arr(fim) });
+    if (acertou) paraUm(alvo.j.id, { t: "dano", q: ia.dano, de: arr(r.pos), por: "refem" });
+  }
+  // anfitrião: reféns não ficam parados; o solto segue quem o soltou, desvia de quem mira nele e atira
   function moverRefens(dt) {
-    const nav = G.physics.nav;
+    const nav = G.physics.nav, ia = dif().refem;
     for (const r of mp.refens) {
-      if (r.estado !== 1) continue;
-      const lider = mp.jogadores.get(r.lider);
-      if (!lider || !lider.vivo) { r.estado = 0; r.lider = null; paraTodos({ t: "refem", i: r.i, ev: "largado" }); continue; }
-      const lp = posDe(lider), dx = lp.x - r.pos.x, dz = lp.z - r.pos.z, d = Math.hypot(dx, dz);
-      if (d > 9) { r.pos.set(lp.x - dx / d * 1.2, lp.y, lp.z - dz / d * 1.2); r.caminho = null; }   // o líder usou uma passagem
-      else if (d > 1.7) {
-        let alvo = lp;
-        r.caminhoT -= dt;
-        let livre = true; try { livre = nav.clearLine(r.pos, lp); } catch {}
-        if (!livre) {
-          if (r.caminhoT <= 0 || !r.caminho) { r.caminhoT = 0.5; try { r.caminho = nav.findPath(r.pos, lp); } catch { r.caminho = null; } }
-          while (r.caminho && r.caminho.length > 1 && Math.hypot(r.caminho[0].x - r.pos.x, r.caminho[0].z - r.pos.z) < 0.6) r.caminho.shift();
-          if (r.caminho && r.caminho.length) alvo = r.caminho[0];
+      if (r.estado > 1) continue;
+      let wx = 0, wz = 0, ancora = r.casa, folga = 2;
+      if (r.estado === 1) {
+        const lider = mp.jogadores.get(r.lider);
+        if (!lider || !lider.vivo) { r.estado = 0; r.lider = null; r.casa.copy(r.pos); paraTodos({ t: "refem", i: r.i, ev: "largado" }); continue; }
+        const lp = posDe(lider), dx = lp.x - r.pos.x, dz = lp.z - r.pos.z, d = Math.hypot(dx, dz);
+        ancora = lp; folga = 2.6;
+        if (d > 9) { r.pos.set(lp.x - dx / d * 1.2, lp.y, lp.z - dz / d * 1.2); r.caminho = null; }   // o líder usou uma passagem
+        else if (d > 1.7) {
+          let alvo = lp, livre = true;
+          r.caminhoT -= dt;
+          try { livre = nav.clearLine(r.pos, lp); } catch {}
+          if (!livre) {
+            if (r.caminhoT <= 0 || !r.caminho) { r.caminhoT = 0.5; try { r.caminho = nav.findPath(r.pos, lp); } catch { r.caminho = null; } }
+            while (r.caminho && r.caminho.length > 1 && Math.hypot(r.caminho[0].x - r.pos.x, r.caminho[0].z - r.pos.z) < 0.6) r.caminho.shift();
+            if (r.caminho && r.caminho.length) alvo = r.caminho[0];
+          }
+          const ax = alvo.x - r.pos.x, az = alvo.z - r.pos.z, ad = Math.hypot(ax, az) || 1;
+          wx = ax / ad; wz = az / ad;
         }
-        const ax = alvo.x - r.pos.x, az = alvo.z - r.pos.z, ad = Math.hypot(ax, az) || 1;
-        r.vel.x = ax / ad * CFG.velRefem * r.civil.vel; r.vel.z = az / ad * CFG.velRefem * r.civil.vel; r.vel.y -= 20 * dt;
-        let res = null; try { res = G.physics.moveCapsule(r.pos, r.vel, dt, 0.3, 1.7, true); } catch {}
-        if (!res || res.onGround) r.vel.y = 0;
       }
-      if (mp.resgate && Math.hypot(r.pos.x - mp.resgate.x, r.pos.z - mp.resgate.z) < RAIO_RESGATE) {
+      // passinhos e pulos ao acaso, sem se afastar do lugar (ou de quem está seguindo)
+      r.passoT -= dt;
+      if (r.passoT <= 0) {
+        r.passoT = 0.6 + Math.random() * 1.2;
+        const a = Math.random() * 6.283; r.passo = Math.random() < 0.7 ? [Math.cos(a), Math.sin(a)] : [0, 0];
+        if (r.noChao && Math.random() < 0.25) r.vel.y = 5;
+      }
+      if (!wx && !wz) {
+        const ox = ancora.x - r.pos.x, oz = ancora.z - r.pos.z, od = Math.hypot(ox, oz);
+        if (od > folga) { wx = ox / od * 0.6; wz = oz / od * 0.6; } else { wx = r.passo[0] * 0.45; wz = r.passo[1] * 0.45; }
+      }
+      // desvia para o lado (e às vezes pula) quando um Terrorista mira nele
+      const lado = inimigoMirando(r);
+      if (lado) {
+        r.ladoT -= dt;
+        if (r.ladoT <= 0) { r.ladoT = 0.5 + Math.random() * 0.6; r.lado = Math.random() < 0.5 ? 1 : -1; if (r.noChao && Math.random() < ia.esquiva * 0.5) r.vel.y = 5; }
+        wx += lado[0] * r.lado * ia.esquiva; wz += lado[1] * r.lado * ia.esquiva;
+      }
+      const wl = Math.hypot(wx, wz), vel = CFG.velRefem * r.civil.vel;
+      if (wl > 1) { wx /= wl; wz /= wl; }
+      r.vel.x = wx * vel; r.vel.z = wz * vel; r.vel.y -= 20 * dt;
+      let res = null; try { res = G.physics.moveCapsule(r.pos, r.vel, dt, 0.3, 1.7 * r.civil.escala, r.noChao); } catch {}
+      r.noChao = !res || !!res.onGround;
+      if (r.noChao && r.vel.y < 0) r.vel.y = 0;
+      if (r.pos.y < -1) { r.pos.y = 0; r.vel.y = 0; }
+      if (r.estado === 1) atirarRefem(r, dt, ia);
+      if (r.estado === 1 && mp.resgate && Math.hypot(r.pos.x - mp.resgate.x, r.pos.z - mp.resgate.z) < RAIO_RESGATE) {
         r.estado = 2;
         paraTodos({ t: "refem", i: r.i, ev: "salvo", id: r.lider });
         r.lider = null;
@@ -947,7 +1014,7 @@
     disco(0, 0, RAIO_RESGATE, 0x4aa3ff, 0.3, discoResgate);
     G.scene.add(cenario);
     explosivos = new T.Group(); explosivos.visible = false; G.scene.add(explosivos);
-    mp.refens = REFENS.map((_, i) => ({ i, pos: new V3(), cur: new V3(), vel: new V3(), estado: 0, lider: null, hp: CFG.vidaRefem, yaw: Math.PI / 2,
+    mp.refens = REFENS.map((_, i) => ({ i, pos: new V3(), cur: new V3(), vel: new V3(), estado: 0, lider: null, hp: 1, yaw: Math.PI / 2, casa: new V3(REFENS[i][0], 0, REFENS[i][1]),
       civil: CIVIS[i % CIVIS.length], boneco: criarBoneco({ nome: "Refém", cor: CIVIS[i % CIVIS.length].cor, css: "#e8e4da", armado: false, civil: CIVIS[i % CIVIS.length] }) }));
     zerarRefens();
   }
@@ -965,9 +1032,9 @@
     mp.itens.clear(); mp.bombas.clear(); mp.granadas.length = 0;
     mp.bolsa = { granada: 0, bomba: 0, relogio: 0 }; mp.desarmarT = 0;
   }
-  function ferirRefem(r, q, porId) {            // anfitrião
-    if (mp.fase !== "valendo" || r.estado > 1) return;
-    r.hp -= q;
+  function ferirRefem(r, golpes, porId) {       // anfitrião; cada golpe vale um tiro na cabeça
+    if (mp.fase !== "valendo" || r.estado > 1 || golpes <= 0) return;
+    r.hp -= golpes;
     if (r.hp > 0) return;
     const quem = mp.jogadores.get(porId);
     r.estado = 3; r.lider = null;
@@ -994,7 +1061,7 @@
     }
     for (const r of mp.refens) {
       const d = r.pos.distanceTo(pos);
-      if (d < cfg.raio) ferirRefem(r, cfg.dano * (1 - d / cfg.raio), por);
+      if (d < cfg.raio) ferirRefem(r, Math.round(cfg.dano * (1 - d / cfg.raio) / 50), por);   // explosão perto também fere
     }
   }
   function explosivosDoAnfitriao(dt) {
