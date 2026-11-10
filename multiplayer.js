@@ -11,7 +11,7 @@
    matar um refém entrega a rodada para o outro time.
 
    Seções: ajustes · estado · rede · perfil e lobby · rodadas · bonecos · tiros · máquinas ·
-   reféns e passagens · explosivos · armas · laço da partida · início. */
+   reféns e passagens · explosivos · armas · modelos das armas · laço da partida · início. */
 (() => {
   "use strict";
 
@@ -644,7 +644,7 @@
     } catch {}
     if (rotuloHud) rotuloHud.textContent = "Relés";
     cenario.visible = false; explosivos.visible = false; bolsaEl.hidden = true; limparExplosivos(); limparArmas();
-    try { G.weapon.name = nomeArmaOriginal; } catch {}
+    try { G.weapon.name = nomeArmaOriginal; aplicarModelo(null); animarFaca(0, false); } catch {}
     for (const j of mp.jogadores.values()) if (j.boneco) j.boneco.grupo.visible = false;
     for (const r of mp.refens) r.boneco.grupo.visible = false;
     placarEl.hidden = true;
@@ -1084,6 +1084,7 @@
     explosivos = new T.Group(); explosivos.visible = false; G.scene.add(explosivos);
     armasGrupo = new T.Group(); armasGrupo.visible = false; G.scene.add(armasGrupo);
     nomeArmaOriginal = G.weapon.name;
+    montarModelos();
     mp.refens = REFENS.map((_, i) => ({ i, pos: new V3(), cur: new V3(), vel: new V3(), estado: 0, lider: null, hp: 1, yaw: Math.PI / 2, casa: new V3(REFENS[i][0], 0, REFENS[i][1]),
       civil: CIVIS[i % CIVIS.length], boneco: criarBoneco({ nome: "Refém", cor: CIVIS[i % CIVIS.length].cor, css: "#e8e4da", armado: false, civil: CIVIS[i % CIVIS.length] }) }));
     zerarRefens();
@@ -1227,6 +1228,7 @@
     mp.arma = null; mp.rajada = 0; mp.semPegarT = 0.5; tocar("reload_magout");
   }
   function facada() {
+    facaAnim = 0.22;
     const p = G.player, meuTime = eu() && eu().time; let alvo = null, perto = FACA.alcance, costas = false;
     for (const j of mp.jogadores.values()) {
       if (j.id === mp.meuId || !j.vivo || j.time === meuTime) continue;
@@ -1262,6 +1264,8 @@
     w.name = a ? a.nome : "Sem arma";
     const visivel = !!a && !a.faca && p.alive;
     if (visivel !== mp.armaVisivel) { mp.armaVisivel = visivel; w.setVisible(visivel); }
+    if (mp.arma !== modeloAtual) aplicarModelo(mp.arma);
+    animarFaca(dt, !!(a && a.faca) && p.alive);
     if (!a && p.alive && mp.semPegarT <= 0 && mp.fase !== "fim")
       for (const it of mp.armasChao.values()) {
         const d = Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z);
@@ -1273,6 +1277,98 @@
   window.addEventListener("keydown", ev => {
     if (ev.code === "KeyG" && !ev.repeat && emRodada() && G.player.alive && !(tela && !tela.hidden)) soltarArma();
   });
+
+  /* ------------------------------------------------------- modelos das armas */
+  // Cada arma tem um modelo próprio na tela, desenhado por código com caixas e cilindros e preso à
+  // arma original do jogo (assim herda o balanço, o recuo e a mira). Medidas em metros: o cano fica em
+  // y = 0 apontando para -z, a linha de mira em y = 0.07, o punho da mão direita perto de z = +0.1.
+  // O Fuzil M4 usa o modelo original do jogo.
+  let modelos = {}, pecasOriginais = [], maoEsquerda = null, maoDireita = null, zMaoDireita = 0, clarao = null, facaNaMao = null, modeloAtual, facaAnim = 0;
+  const AVANCO_CURTA = 0.17;      // pistolas e revólver ficam mais à frente, senão colam na câmera
+  function montarModelos() {
+    const T = G.THREE, raiz = G.weapon.root;
+    pecasOriginais = raiz.children.slice(0, 8); clarao = raiz.children[8]; maoDireita = raiz.children[9]; zMaoDireita = maoDireita.position.z; maoEsquerda = raiz.children[10];
+    const luva = raiz.children[9].children[0].material;
+    const cor = (hex, rug = 0.75, met = 0.1) => new T.MeshStandardMaterial({ color: hex, roughness: rug, metalness: met });
+    const metal = cor(0x1d2024, 0.5, 0.55), poli = cor(0x2a2e33, 0.9, 0), madeira = cor(0x6b4226), areia = cor(0x9a8660), aco = cor(0x70767c, 0.45, 0.7);
+    const pronto = m => { m.layers.set(1); m.frustumCulled = false; m.receiveShadow = true; return m; };   // mesma camada da arma do jogo
+    const cx = (g, mat, w, h, d, x, y, z, rx = 0) => { const m = pronto(new T.Mesh(new T.BoxGeometry(w, h, d), mat)); m.position.set(x, y, z); m.rotation.x = rx; g.add(m); return m; };
+    // cilindro deitado no eixo do cano: começa em z0 e vai "comp" metros para a frente
+    const cano = (g, mat, r, comp, x, y, z0) => { const m = pronto(new T.Mesh(new T.CylinderGeometry(r, r, comp, 14), mat)); m.rotation.x = Math.PI / 2; m.position.set(x, y, z0 - comp / 2); g.add(m); return m; };
+    const miras = (g, zFrente) => { cx(g, metal, 0.006, 0.07, 0.008, 0, 0.035, zFrente); cx(g, metal, 0.03, 0.03, 0.008, 0, 0.055, 0.08); };
+    const novo = (chave, boca, maoEsq, montar) => {
+      const g = new T.Group(), curta = !maoEsq; g.visible = false; raiz.add(g); montar(g);
+      if (curta) g.position.z = -AVANCO_CURTA;
+      modelos[chave] = { g, boca: boca + (curta ? AVANCO_CURTA : 0), maoEsq, curta };
+    };
+
+    novo("t_fuzil", 0.56, true, g => {                       // AK-47: madeira, carregador curvo
+      cx(g, metal, 0.038, 0.06, 0.3, 0, -0.002, 0.02); cx(g, metal, 0.022, 0.016, 0.26, 0, 0.034, 0.02); cano(g, metal, 0.011, 0.42, 0, 0, -0.13); cano(g, metal, 0.013, 0.2, 0, 0.032, -0.13);
+      cx(g, madeira, 0.052, 0.06, 0.2, 0, -0.005, -0.23); cx(g, madeira, 0.042, 0.085, 0.27, 0, -0.03, 0.3, -0.1);
+      cx(g, madeira, 0.035, 0.1, 0.045, 0, -0.085, 0.12, 0.3);
+      cx(g, metal, 0.03, 0.09, 0.055, 0, -0.07, -0.06, -0.2); cx(g, metal, 0.03, 0.09, 0.055, 0, -0.14, -0.085, -0.5); cx(g, metal, 0.03, 0.07, 0.055, 0, -0.2, -0.125, -0.8);
+      miras(g, -0.5);
+    });
+    novo("p_metra", 0.36, true, g => {                       // MP5: compacta, carregador fino
+      cx(g, metal, 0.036, 0.058, 0.3, 0, -0.002, 0.0); cx(g, metal, 0.02, 0.016, 0.2, 0, 0.034, -0.02); cano(g, metal, 0.011, 0.2, 0, 0, -0.15);
+      cx(g, poli, 0.052, 0.062, 0.15, 0, -0.005, -0.21); cx(g, poli, 0.034, 0.1, 0.045, 0, -0.085, 0.11, 0.25);
+      cx(g, metal, 0.024, 0.19, 0.04, 0, -0.12, -0.07, -0.18);
+      cx(g, metal, 0.01, 0.01, 0.2, -0.016, 0.0, 0.25); cx(g, metal, 0.01, 0.01, 0.2, 0.016, 0.0, 0.25);
+      miras(g, -0.3);
+    });
+    novo("t_metra", 0.3, true, g => {                        // Uzi: caixote, carregador dentro do punho
+      cx(g, metal, 0.042, 0.07, 0.28, 0, -0.005, -0.03); cx(g, metal, 0.016, 0.014, 0.1, 0, 0.036, 0.0); cano(g, metal, 0.012, 0.13, 0, 0, -0.17);
+      cx(g, poli, 0.036, 0.11, 0.055, 0, -0.09, 0.09); cx(g, metal, 0.026, 0.16, 0.036, 0, -0.2, 0.09);
+      cx(g, poli, 0.05, 0.03, 0.12, 0, -0.05, -0.1);
+      miras(g, -0.15);
+    });
+    novo("p_12", 0.62, true, g => {                          // Escopeta 12: cano grosso, tubo embaixo, telha de bombear
+      cx(g, metal, 0.038, 0.066, 0.22, 0, -0.004, 0.06); cano(g, metal, 0.017, 0.57, 0, 0.012, -0.05); cano(g, metal, 0.014, 0.42, 0, -0.022, -0.05);
+      cx(g, madeira, 0.054, 0.052, 0.17, 0, -0.022, -0.27); cx(g, madeira, 0.042, 0.09, 0.28, 0, -0.03, 0.31, -0.12);
+      cx(g, metal, 0.006, 0.03, 0.008, 0, 0.045, -0.6);
+    });
+    novo("t_12", 0.34, true, g => {                          // 12 serrada: dois canos curtos, sem coronha
+      cx(g, metal, 0.062, 0.07, 0.14, 0, 0.0, 0.03); cano(g, aco, 0.017, 0.3, -0.018, 0.008, -0.04); cano(g, aco, 0.017, 0.3, 0.018, 0.008, -0.04);
+      cx(g, madeira, 0.05, 0.045, 0.14, 0, -0.03, -0.18); cx(g, madeira, 0.04, 0.12, 0.06, 0, -0.07, 0.13, 0.5);
+    });
+    const pistola = (chave, mat, compr, extra) => novo(chave, compr - 0.02, false, g => {
+      cx(g, metal, 0.03, 0.042, compr, 0, 0.03, 0.1 - compr / 2); cx(g, mat, 0.028, 0.03, compr - 0.03, 0, -0.004, 0.1 - compr / 2 + 0.01);
+      cx(g, mat, 0.03, 0.12, 0.048, 0, -0.07, 0.09, 0.22);
+      cx(g, metal, 0.005, 0.014, 0.006, 0, 0.058, 0.11 - compr); cx(g, metal, 0.02, 0.014, 0.006, 0, 0.058, 0.085);
+      if (extra) extra(g);
+    });
+    pistola("p_pistola", poli, 0.19);                                                             // 9mm
+    pistola("t_pistola", areia, 0.22);                                                            // .45, armação cor de areia
+    pistola("t_pistola2", poli, 0.2, g => cx(g, metal, 0.022, 0.11, 0.034, 0, -0.17, 0.115, 0.22));   // automática: carregador comprido
+    novo("p_revolver", 0.2, false, g => {                    // Revólver .38: tambor, cabo de madeira
+      cano(g, aco, 0.011, 0.16, 0, 0.03, -0.04); cx(g, aco, 0.014, 0.02, 0.16, 0, 0.008, -0.12);
+      cano(g, aco, 0.03, 0.06, 0, 0.012, 0.03); cx(g, aco, 0.028, 0.07, 0.09, 0, 0.012, 0.075);
+      cx(g, madeira, 0.03, 0.11, 0.045, 0, -0.065, 0.11, 0.35);
+      cx(g, aco, 0.005, 0.016, 0.006, 0, 0.05, -0.19);
+    });
+    // a faca fica presa direto na câmera, porque a arma do jogo some quando se está de faca
+    facaNaMao = new T.Group(); facaNaMao.visible = false;
+    cx(facaNaMao, aco, 0.003, 0.026, 0.15, 0, 0, -0.115); cx(facaNaMao, poli, 0.02, 0.026, 0.09, 0, 0, 0.01); cx(facaNaMao, aco, 0.026, 0.042, 0.007, 0, 0, -0.038);
+    cx(facaNaMao, luva, 0.06, 0.07, 0.09, 0, -0.015, 0.02); cx(facaNaMao, luva, 0.06, 0.06, 0.3, 0.01, -0.05, 0.2, -0.2);
+    facaNaMao.rotation.set(0.5, 0.75, -0.2);
+    G.camera.add(facaNaMao);
+  }
+  function aplicarModelo(chave) {
+    const m = modelos[chave], original = !m;          // sem modelo próprio (M4, mãos vazias, jogo solo): arma original
+    for (const o of pecasOriginais) o.visible = original;
+    for (const k in modelos) modelos[k].g.visible = k === chave;
+    maoEsquerda.visible = original || m.maoEsq;
+    maoDireita.position.z = zMaoDireita - (m && m.curta ? AVANCO_CURTA : 0);
+    clarao.position.z = original ? -0.531 : -m.boca;
+    modeloAtual = chave;
+  }
+  function animarFaca(dt, naMao) {
+    facaNaMao.visible = naMao;
+    if (!naMao) return;
+    facaAnim = Math.max(0, facaAnim - dt);
+    const golpe = Math.sin(Math.min(1, facaAnim / 0.22) * Math.PI);
+    facaNaMao.position.set(0.2 - golpe * 0.1, -0.17 + golpe * 0.04, -0.5 - golpe * 0.22);
+  }
 
   /* --------------------------------------------------------- laço da partida */
   let placarEl = null;
