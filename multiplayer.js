@@ -11,7 +11,7 @@
    matar um refém entrega a rodada para o outro time.
 
    Seções: ajustes · estado · rede · perfil e lobby · rodadas · bonecos · tiros · máquinas ·
-   reféns e passagens · explosivos · laço da partida · início. */
+   reféns e passagens · explosivos · armas · laço da partida · início. */
 (() => {
   "use strict";
 
@@ -72,6 +72,25 @@
     { de: [6, -26],     para: [27.2, -12.6] },
     { de: [9.5, -22],   para: [-26.6, -15] },
   ];
+  // armas: cada jogador nasce sem arma, com o conjunto do seu time no chão ao redor. Só dá para carregar uma.
+  // Todas tiram o mesmo dano por tiro; muda o pente e o modo (auto, semi, rajada). rpm = tiros por minuto (máx. 720).
+  const ARMAS = {
+    p_fuzil:    { nome: "Fuzil M4",     time: "p", pente: 30, modo: "rajada", rajada: 3, rpm: 720 },
+    p_metra:    { nome: "MP5",          time: "p", pente: 30, modo: "auto", rpm: 720 },
+    p_12:       { nome: "Escopeta 12",  time: "p", pente: 6,  modo: "semi", rpm: 70, chumbo: 8, alcance: 20 },
+    p_pistola:  { nome: "Pistola 9mm",  time: "p", pente: 12, modo: "semi", rpm: 360 },
+    p_revolver: { nome: "Revólver .38", time: "p", pente: 6,  modo: "semi", rpm: 200 },
+    p_faca:     { nome: "Faca",         time: "p", faca: true },
+    t_fuzil:    { nome: "AK-47",        time: "t", pente: 30, modo: "auto", rpm: 560 },
+    t_metra:    { nome: "Uzi",          time: "t", pente: 25, modo: "auto", rpm: 720 },
+    t_12:       { nome: "12 serrada",   time: "t", pente: 2,  modo: "semi", rpm: 120, chumbo: 10, alcance: 15 },
+    t_pistola:  { nome: "Pistola .45",  time: "t", pente: 8,  modo: "semi", rpm: 300 },
+    t_pistola2: { nome: "Pistola auto", time: "t", pente: 17, modo: "auto", rpm: 600 },
+    t_faca:     { nome: "Faca",         time: "t", faca: true },
+  };
+  // faca: silenciosa (ninguém ouve seus passos); pelas costas mata, pela frente só fere
+  const FACA = { alcance: 1.9, danoFrente: 35, danoCostas: 500, espera: 0.6 };
+  const DANO_CHUMBO = 13;      // cada bago da 12 (ela solta vários de uma vez, mas só alcança de perto)
   const CHAVE_PERFIL = "saltline.perfil.v1";
   const ESTADOS = ["preso", "seguindo", "salvo", "morto"];
 
@@ -92,6 +111,9 @@
     bombas: new Map(),        // bombas armadas: id -> { id, tipo, pos, t, por, malha, bipe }
     granadas: [],             // granadas no ar: { pos, vel, t, por, malha }
     bolsa: { granada: 0, bomba: 0, relogio: 0 }, tempoIdx: 1, desarmarT: 0, proxId: 1,
+    arma: null,               // chave em ARMAS da arma na mão, ou null
+    armasChao: new Map(),     // id -> { id, arma, pos, malha, pedido }
+    cadT: 0, rajada: 0, gatilhoAntes: false, semPegarT: 0, armaVisivel: null, passoT: 0,
     marionetes: new Map(),    // convidado: id da máquina no anfitrião -> máquina local
     aplicandoMorte: false, ultimoDano: null, envioT: 0, placarT: 0, ouvirT: 0,
   };
@@ -207,11 +229,20 @@
       case "acerto": {
         const alvo = mp.jogadores.get(m.em);
         if (mp.fase === "valendo" && alvo && alvo.vivo && j.vivo && alvo.time !== j.time)
-          paraUm(alvo.id, { t: "dano", q: Math.min(120, +m.q || 0), de: m.de, por: id });
+          paraUm(alvo.id, { t: "dano", q: Math.min(600, +m.q || 0), de: m.de, por: id });
         break;
       }
       case "acertoRefem":
         if (mp.refens[m.i]) ferirRefem(mp.refens[m.i], 1, id);       // o cliente só avisa tiro na cabeça
+        break;
+      case "armaPeguei":
+        if (mp.armasChao.has(m.id) && j.vivo) paraTodos({ t: "armaPega", id: m.id, por: id });
+        break;
+      case "armaSolta":
+        if (ARMAS[m.arma] && Array.isArray(m.p)) paraTodos({ t: "armaChao", d: [mp.proxId++, m.arma, +m.p[0], +m.p[1]], por: id });
+        break;
+      case "passo":
+        paraTodos({ t: "passo", p: m.p, id }, id);
         break;
       case "pegueiItem": {
         const it = mp.itens.get(m.id);
@@ -323,6 +354,20 @@
         else if (m.ev === "morto") { r.estado = 3; r.lider = null; G.hud.feed(`<b>${nome}</b> matou um refém`); }
         break;
       }
+      case "armaPega": {
+        const it = mp.armasChao.get(m.id);
+        if (!it) break;
+        tirarArmaDoChao(m.id);
+        if (m.por === mp.meuId && !mp.arma) { mp.arma = it.arma; mp.rajada = 0; mp.cadT = 0.3; try { G.weapon.reset(); } catch {} tocar("reload_magin"); G.hud.message(ARMAS[it.arma].nome + " · G solta", 2.5); }
+        break;
+      }
+      case "armaChao":
+        porArmaNoChao(m.d);
+        if (m.por === mp.meuId) mp.armasChao.get(m.d[0]).espera = true;   // quem soltou só pega de novo depois de se afastar
+        break;
+      case "passo":
+        if (m.id !== mp.meuId) tocar("step_concrete", { pos: new V3().fromArray(m.p), gain: 0.8 });
+        break;
       case "item": {
         const it = mp.itens.get(m.id);
         if (!it) break;
@@ -446,7 +491,7 @@
       <div class="mp-dif"><span>Dificuldade</span>${mp.anfitriao
         ? `<div class="seg">${Object.entries(DIFICULDADES).map(([k, v]) => `<button data-mp="dif-${k}" aria-pressed="${k === mp.dificuldade}">${v.nome}</button>`).join("")}</div>`
         : `<b>${d.nome}</b>`}</div>
-      <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times. Vence quem fizer ${CFG.rodadasParaVencer} rodadas. Refém só morre com tiro na cabeça e, depois de solto, anda armado e atira nos Terroristas. O galpão tem 4 saídas secretas numeradas; cada uma leva sempre ao mesmo lugar. Só os Terroristas pegam os explosivos espalhados pelo mapa.</p>
+      <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times. Vence quem fizer ${CFG.rodadasParaVencer} rodadas. Refém só morre com tiro na cabeça e, depois de solto, anda armado e atira nos Terroristas. O galpão tem 4 saídas secretas numeradas; cada uma leva sempre ao mesmo lugar. Só os Terroristas pegam os explosivos espalhados pelo mapa. Todos nascem sem arma: pegue uma do chão passando por cima (G solta, só uma por vez).</p>
       <div class="mp-acoes">
         ${mp.anfitriao ? `<button class="btn primary" data-mp="comecar">Começar partida</button>`
           : `<span class="mp-espera">${emAndamento ? "Partida em andamento — você entra na próxima rodada" : "Aguardando o anfitrião começar"}</span>`}
@@ -521,7 +566,7 @@
       time.forEach((j, k) => { nasc[j.id] = pts[k]; j.vivo = true; j.naRodada = true; j.pos.set(pts[k][0], 0, pts[k][2]); j.cur.copy(j.pos); });
     }
     try { G.enemies.clear(); } catch {}
-    paraTodos({ t: "rodada", n: mp.rodada, placar: mp.placar, nasc, dificuldade: mp.dificuldade, itens: sortearItens() });
+    paraTodos({ t: "rodada", n: mp.rodada, placar: mp.placar, nasc, dificuldade: mp.dificuldade, itens: sortearItens(), armas: sortearArmas(nasc) });
     mandarLobby();
     const r = RESGATES[Math.floor(Math.random() * RESGATES.length)], q = pisavel(r[0], r[1]);
     mp.resgate = new V3(q[0], 0, q[1]);
@@ -560,7 +605,8 @@
     mp.resgateVisto = null; discoResgate.visible = false;
     fecharOverlay(); esconderMenuSolo();
     if (!mp.anfitriao) { try { G.enemies.clear(); } catch {} mp.marionetes.clear(); }
-    zerarRefens(); limparExplosivos();
+    zerarRefens(); limparExplosivos(); limparArmas();
+    for (const d of m.armas || []) porArmaNoChao(d);
     for (const d of m.itens || []) {
       const it = { id: d[0], tipo: d[1], pos: new V3(d[2], 0, d[3]), malha: caixa(CORES_ITEM[d[1]], 0.26), pedido: false };
       it.malha.position.set(d[2], 0.35, d[3]); mp.itens.set(it.id, it);
@@ -572,16 +618,17 @@
     p.reset(meu ? { pos: new V3(meu[0], meu[1], meu[2]), yaw: meu[3] } : G.level.playerStart);
     p.enabled = false; p.invulnerable = false;
     post.fade = 0; post.saturation = satOriginal; post.flash = 0;
-    G.hud.reset(); G.hud.show(true); G.weapon.setVisible(!!meu);
+    G.hud.reset(); G.hud.show(true); G.weapon.setVisible(false);
     G.input.setGameplay(true); try { G.input.requestLock(); } catch {}
     try { G.audio.resume(); G.audio.setPaused(false); G.audio.setIntensity(0.6); } catch {}
     G.events.emit("game:state", { state: "playing", prev: "title" });
     if (rotuloHud) rotuloHud.textContent = "Reféns";
-    cenario.visible = true; explosivos.visible = true;
+    cenario.visible = true; explosivos.visible = true; armasGrupo.visible = true;
     G.hud.warn("Rodada " + m.n, CFG.tempoPreparo);
     const t = eu() && TIMES[eu().time];
     if (t && meu) G.hud.radio("Você está com os " + t.nome + ". " + t.objetivo + ".", CFG.tempoPreparo + 1);
     else G.hud.message("Você entra na próxima rodada", 6);
+    if (meu) G.hud.message("Pegue uma arma no chão · G solta · R recarrega", CFG.tempoPreparo + 5);
     if (!meu) p.alive = false;
     placarEl.hidden = false;
   }
@@ -596,7 +643,8 @@
       G.audio.setIntensity(0.15);
     } catch {}
     if (rotuloHud) rotuloHud.textContent = "Relés";
-    cenario.visible = false; explosivos.visible = false; bolsaEl.hidden = true; limparExplosivos();
+    cenario.visible = false; explosivos.visible = false; bolsaEl.hidden = true; limparExplosivos(); limparArmas();
+    try { G.weapon.name = nomeArmaOriginal; } catch {}
     for (const j of mp.jogadores.values()) if (j.boneco) j.boneco.grupo.visible = false;
     for (const r of mp.refens) r.boneco.grupo.visible = false;
     placarEl.hidden = true;
@@ -733,9 +781,7 @@
   }
   function instalarTiros() {
     const original = G.combat.playerShot;
-    G.combat.playerShot = (o, dir, opt = {}) => {
-      if (!emRodada()) return original(o, dir, opt);
-      if (!G.player.alive || mp.fase === "preparo") return null;
+    const umTiro = (o, dir, opt) => {
       const alcance = opt.range || 300, h = raioEmPessoas(o, dir, alcance);
       if (h) {
         const parede = G.physics.raycast(o, dir, alcance), maq = G.enemies.raycast(o, dir, parede ? parede.dist : alcance);
@@ -752,7 +798,28 @@
       }
       return original(o, dir, opt);
     };
+    G.combat.playerShot = (o, dir, opt = {}) => {
+      if (!emRodada()) return original(o, dir, opt);
+      const a = ARMAS[mp.arma];
+      if (!G.player.alive || mp.fase === "preparo" || !a || a.faca) return null;
+      if (!a.chumbo) return umTiro(o, dir, opt);
+      let primeiro = null;
+      for (let k = 0; k < a.chumbo; k++) {            // a 12: vários bagos espalhados, só de perto
+        const d = dir.clone(); d.x += (Math.random() - 0.5) * 0.11; d.y += (Math.random() - 0.5) * 0.08; d.z += (Math.random() - 0.5) * 0.11; d.normalize();
+        const r = umTiro(o, d, { ...opt, damage: DANO_CHUMBO, range: a.alcance });
+        if (k) try { G.fx.tracer(o.clone().addScaledVector(d, 0.6), r && r.point ? r.point : o.clone().addScaledVector(d, a.alcance)); } catch {}
+        primeiro = primeiro || r;
+      }
+      return primeiro;
+    };
+    G.events.on("player:step", ev => {               // os outros ouvem seus passos, menos se você estiver de faca
+      const a = ARMAS[mp.arma];
+      if (!emRodada() || (a && a.faca) || mp.passoT > 0) return;
+      mp.passoT = 0.25; enviar({ t: "passo", p: arr(G.player.pos) });
+    });
     G.events.on("weapon:fire", ev => {
+      const a = ARMAS[mp.arma];
+      if (emRodada() && a && a.rpm) { mp.cadT = 60 / a.rpm - 0.01; if (mp.rajada > 0) mp.rajada--; }
       if (!emRodada() || !ev || !ev.dir) return;
       const o = ev.origin || G.player.eye, hit = G.physics.raycast(o, ev.dir, 300);
       const fim = hit ? hit.point : o.clone().addScaledVector(ev.dir, 90);
@@ -762,7 +829,8 @@
       if (!emRodada()) return;
       const u = mp.ultimoDano, por = u && performance.now() - u.t < 4000 ? u.por : null;
       const j = eu(); if (j) j.vivo = false;
-      G.weapon.setVisible(false); G.hud.setPrompt(null);
+      soltarArma();
+      G.hud.setPrompt(null);
       enviar({ t: "morri", por });
       G.hud.message("Você caiu — aguarde a próxima rodada", 8);
     });
@@ -1014,6 +1082,8 @@
     disco(0, 0, RAIO_RESGATE, 0x4aa3ff, 0.3, discoResgate);
     G.scene.add(cenario);
     explosivos = new T.Group(); explosivos.visible = false; G.scene.add(explosivos);
+    armasGrupo = new T.Group(); armasGrupo.visible = false; G.scene.add(armasGrupo);
+    nomeArmaOriginal = G.weapon.name;
     mp.refens = REFENS.map((_, i) => ({ i, pos: new V3(), cur: new V3(), vel: new V3(), estado: 0, lider: null, hp: 1, yaw: Math.PI / 2, casa: new V3(REFENS[i][0], 0, REFENS[i][1]),
       civil: CIVIS[i % CIVIS.length], boneco: criarBoneco({ nome: "Refém", cor: CIVIS[i % CIVIS.length].cor, css: "#e8e4da", armado: false, civil: CIVIS[i % CIVIS.length] }) }));
     zerarRefens();
@@ -1098,7 +1168,7 @@
     const b = mp.bolsa, mostra = !!(j && j.time === "t" && p.alive);
     bolsaEl.hidden = !mostra;
     if (mostra) {
-      const txt = `<span><kbd>G</kbd> Granada <b>${b.granada}</b></span><span><kbd>B</kbd> Bomba <b>${b.bomba}</b></span>` +
+      const txt = `<span><kbd>Q</kbd> Granada <b>${b.granada}</b></span><span><kbd>B</kbd> Bomba <b>${b.bomba}</b></span>` +
         `<span><kbd>V</kbd> Relógio <b>${b.relogio}</b> · <kbd>T</kbd> ${CFG.relogio.tempos[mp.tempoIdx]}s</span>`;
       if (txt !== bolsaEl._txt) { bolsaEl._txt = txt; bolsaEl.innerHTML = txt; }
     }
@@ -1107,7 +1177,7 @@
     const p = G && G.player, j = eu();
     if (!emRodada() || mp.fase !== "valendo" || !j || j.time !== "t" || !p.alive || ev.repeat) return;
     if (ev.code === "KeyT") mp.tempoIdx = (mp.tempoIdx + 1) % CFG.relogio.tempos.length;
-    else if (ev.code === "KeyG" && mp.bolsa.granada > 0) {
+    else if (ev.code === "KeyQ" && mp.bolsa.granada > 0) {
       mp.bolsa.granada--;
       const v = p.forward.clone().multiplyScalar(CFG.granada.forca); v.y += 3;
       enviar({ t: "granada", o: arr(p.eye.clone().addScaledVector(p.forward, 0.5)), v: arr(v) });
@@ -1116,6 +1186,92 @@
       mp.bolsa[tipo]--;
       enviar({ t: "plantar", tipo, p: arr(p.pos), tempo: CFG.relogio.tempos[mp.tempoIdx] });
     }
+  });
+
+  /* -------------------------------------------------------------------- armas */
+  let armasGrupo = null, nomeArmaOriginal = "";
+  function sortearArmas(nasc) {                 // anfitrião: um conjunto completo em volta de onde cada jogador nasce
+    const lista = [];
+    for (const [id, pt] of Object.entries(nasc)) {
+      const j = mp.jogadores.get(id); if (!j) continue;
+      const chaves = Object.keys(ARMAS).filter(k => ARMAS[k].time === j.time);
+      chaves.forEach((k, n) => {
+        const ang = n / chaves.length * Math.PI * 2, q = pisavel(pt[0] + Math.cos(ang) * 2, pt[2] + Math.sin(ang) * 2);
+        lista.push([mp.proxId++, k, +q[0].toFixed(2), +q[1].toFixed(2)]);
+      });
+    }
+    return lista;
+  }
+  function porArmaNoChao(d) {
+    const T = G.THREE, a = ARMAS[d[1]], g = new T.Group(); if (!a) return;
+    g.add(new T.Mesh(new T.BoxGeometry(a.faca ? 0.05 : 0.09, a.faca ? 0.05 : 0.14, a.faca ? 0.34 : 0.75), new T.MeshBasicMaterial({ color: TIMES[a.time].cor })));
+    const pl = criarPlaca(a.nome, TIMES[a.time].css); pl.position.y = 0.4; pl.scale.set(1.4, 0.35, 1); g.add(pl);
+    g.position.set(d[2], 0.35, d[3]); armasGrupo.add(g);
+    mp.armasChao.set(d[0], { id: d[0], arma: d[1], pos: new V3(d[2], 0, d[3]), malha: g, pedido: false });
+  }
+  function tirarArmaDoChao(id) {
+    const it = mp.armasChao.get(id); if (!it) return;
+    armasGrupo.remove(it.malha);
+    it.malha.children[0].geometry.dispose(); it.malha.children[0].material.dispose();
+    it.malha.children[1].material.map.dispose(); it.malha.children[1].material.dispose();
+    mp.armasChao.delete(id);
+  }
+  function limparArmas() {
+    for (const id of [...mp.armasChao.keys()]) tirarArmaDoChao(id);
+    mp.arma = null; mp.rajada = 0; mp.cadT = 0; mp.armaVisivel = null; mp.gatilhoAntes = false;
+  }
+  function soltarArma() {
+    if (!mp.arma || !emRodada()) return;
+    const p = G.player;
+    enviar({ t: "armaSolta", arma: mp.arma, p: [+(p.pos.x - Math.sin(p.yaw) * 0.9).toFixed(2), +(p.pos.z - Math.cos(p.yaw) * 0.9).toFixed(2)] });
+    mp.arma = null; mp.rajada = 0; mp.semPegarT = 0.5; tocar("reload_magout");
+  }
+  function facada() {
+    const p = G.player, meuTime = eu() && eu().time; let alvo = null, perto = FACA.alcance, costas = false;
+    for (const j of mp.jogadores.values()) {
+      if (j.id === mp.meuId || !j.vivo || j.time === meuTime) continue;
+      const dx = j.cur.x - p.pos.x, dz = j.cur.z - p.pos.z, d = Math.hypot(dx, dz) || 0.01;
+      if (d > perto || Math.abs(j.cur.y - p.pos.y) > 1.5 || (dx * p.forward.x + dz * p.forward.z) / d < 0.5) continue;
+      perto = d; alvo = j;
+      costas = (dx * -Math.sin(j.yaw) + dz * -Math.cos(j.yaw)) / d > 0.3;     // ele está olhando para longe de mim
+    }
+    if (alvo) {
+      enviar({ t: "acerto", em: alvo.id, q: costas ? FACA.danoCostas : FACA.danoFrente, de: arr(p.pos) });
+      G.hud.hitmarker(costas ? "kill" : "hit"); tocar("impact_enemy", { pos: alvo.cur, gain: 0.5 });
+      return;
+    }
+    for (const e of G.enemies.list) if (e.alive && e.pos.distanceTo(p.eye) < 2.2) {
+      try { e.damage(70, e.pos.clone(), p.forward.clone(), "body"); } catch {}
+      G.hud.hitmarker("hit"); break;
+    }
+  }
+  // todo quadro, antes da arma do jogo atualizar: decide se o gatilho passa, ajusta o pente e pega arma do chão
+  function armasLocais(dt) {
+    const w = G.weapon, p = G.player, a = ARMAS[mp.arma], vale = p.alive && mp.fase === "valendo", gatilho = !!G.input.fire;
+    mp.cadT -= dt; mp.semPegarT -= dt; mp.passoT -= dt;
+    let pode = false;
+    if (a && !a.faca && vale && mp.cadT <= 0) {
+      if (w.ammo === 0 || w.state === "reloading") mp.rajada = 0;
+      if (a.modo === "auto") pode = gatilho;
+      else if (a.modo === "semi") pode = gatilho && !mp.gatilhoAntes;                    // um tiro por clique
+      else { if (gatilho && !mp.gatilhoAntes && mp.rajada <= 0) mp.rajada = a.rajada; pode = mp.rajada > 0; }
+    }
+    if (a && a.faca && vale && gatilho && !mp.gatilhoAntes && mp.cadT <= 0) { mp.cadT = FACA.espera; facada(); }
+    mp.gatilhoAntes = gatilho; G.input.fire = pode;
+    if (a && !a.faca) { if (w.ammo > a.pente) w.ammo = a.pente; w.reserve = 150; }       // munição infinita: R sempre recarrega
+    w.name = a ? a.nome : "Sem arma";
+    const visivel = !!a && !a.faca && p.alive;
+    if (visivel !== mp.armaVisivel) { mp.armaVisivel = visivel; w.setVisible(visivel); }
+    if (!a && p.alive && mp.semPegarT <= 0 && mp.fase !== "fim")
+      for (const it of mp.armasChao.values()) {
+        const d = Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z);
+        if (it.espera) { if (d > 1.8) it.espera = false; continue; }
+        if (!it.pedido && d < 1.1 && p.pos.y < 2) { it.pedido = true; mp.semPegarT = 0.4; enviar({ t: "armaPeguei", id: it.id }); break; }
+      }
+    for (const it of mp.armasChao.values()) it.malha.children[0].rotation.y += dt * 1.2;
+  }
+  window.addEventListener("keydown", ev => {
+    if (ev.code === "KeyG" && !ev.repeat && emRodada() && G.player.alive && !(tela && !tela.hidden)) soltarArma();
   });
 
   /* --------------------------------------------------------- laço da partida */
@@ -1142,7 +1298,7 @@
       }
       if (mp.fase === "valendo" && !mp.anfitriao) mp.tempo -= dt;
       if (j) { j.vivo = p.alive && j.vivo; j.pos.copy(p.pos); j.cur.copy(p.pos); j.yaw = p.yaw; j.pitch = p.pitch; j.agachado = p.crouching; }
-      interagir(dt); passagens(dt); explosivosLocais(dt);
+      armasLocais(dt); interagir(dt); passagens(dt); explosivosLocais(dt);
       if (mp.anfitriao) logicaDoAnfitriao(dt); else moverMarionetes(dt);
       atualizarBonecos(dt); atualizarObjetivo();
       mp.envioT -= dt;
