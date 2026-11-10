@@ -1316,6 +1316,15 @@
     },
   };
 
+  /* ---------------------------------------------------------------------- som */
+  // Com SALTLINE_MUDO = true no index.html o jogo abre sempre no mudo. A tecla M liga e desliga o som, no solo e no multiplayer;
+  // o volume também pode ser ajustado em Ajustes.
+  window.addEventListener("keydown", ev => {
+    if (ev.code !== "KeyM" || ev.repeat || !G || (ev.target && ev.target.tagName === "INPUT")) return;
+    const cfg = solo.menus.settings; cfg.volume = cfg.volume > 0 ? 0 : 0.8;
+    try { G.audio.resume(); G.audio.setVolume(cfg.volume); G.hud.message(cfg.volume ? "Som ligado" : "Som desligado", 1.5); } catch {}
+  });
+
   /* ------------------------------------------------------------------- início */
   function iniciar() {
     G = window.__G; V3 = G.THREE.Vector3; solo = G.game; partida.menus = solo.menus;
