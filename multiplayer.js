@@ -89,9 +89,9 @@
   const MESA = [-13.9, -12.1, -26.68];                                  // mesa encostada na parede norte: x de, x até, z da frente
   // quem são os reféns, na ordem das posições acima: cor da roupa, cabelo, tamanho e ritmo de caminhada
   const CIVIS = [
-    { quem: "mulher",  camisa: 0x8c2f4f, calca: 0x232b3a, cabelo: 0x2e1a10, pele: 0xc08a68, cabeloLongo: true, modelo: true, sapato: 0x3a2a22, escala: 0.95, vel: 1 },
-    { quem: "criança", camisa: 0xc79a1e, calca: 0x2f4f7a, cabelo: 0x23160e, pele: 0xc69472, bermuda: true, mangaCurta: true, franja: true, modelo: true, tom: 0xcfe0ff, listra: 0xf2efe8, sapato: 0xd8d4c8, cabecaEscala: 1.16, senta: true, escala: 0.7, vel: 0.9 },
-    { quem: "idoso",   camisa: 0x4d5a66, calca: 0x38332d, cabelo: 0xc9c9c9, pele: 0xb88768, curvado: true, bigode: true, careca: true, oculos: true, senta: true, escala: 0.92, vel: 0.75 },
+    { quem: "mulher",  camisa: 0x8c2f4f, calca: 0x232b3a, cabelo: 0x2e1a10, pele: 0xc08a68, cabeloLongo: true, modelo: true, tom: 0xffffff, sapato: 0x3a2a22, escala: 0.95, vel: 1 },
+    { quem: "criança", camisa: 0xc79a1e, calca: 0x2f4f7a, cabelo: 0x23160e, pele: 0xc69472, bermuda: true, mangaCurta: true, franja: true, modelo: true, tom: 0x8fb0ff, listra: 0xf2efe8, sapato: 0xd8d4c8, cabecaEscala: 1.16, senta: true, escala: 0.9, vel: 0.9 },
+    { quem: "idoso",   camisa: 0x4d5a66, calca: 0x38332d, cabelo: 0xc9c9c9, pele: 0xb88768, curvado: true, bigode: true, careca: true, oculos: true, senta: true, modelo: true, tom: 0xffc890, escala: 0.92, vel: 0.75 },
   ];
   // pontos de resgate: um é sorteado a cada rodada e só os Policiais ficam sabendo qual
   // [x, z, nome que aparece no painel da sala dos reféns]. No mapa, norte é -z e oeste é -x.
@@ -272,7 +272,10 @@
         break;
       }
       case "acertoRefem":
-        if (mp.refens[m.i]) ferirRefem(mp.refens[m.i], 1, id);       // o cliente só avisa tiro na cabeça
+        if (mp.refens[m.i] && mp.fase === "valendo") {
+          const r = mp.refens[m.i];              // capacete segura o primeiro tiro na cabeça e some; colete, o primeiro tiro no corpo
+          if (m.c === 0) r.prot &= ~1; else if (r.prot & 2) r.prot &= ~2; else ferirRefem(r, 1, id);
+        }
         break;
       case "porta":
         if (mp.fase === "valendo" && j.vivo) paraTodos({ t: "porta", aberta: !!m.aberta });
@@ -369,7 +372,7 @@
           if (!j || j.id === mp.meuId) continue;
           j.pos.set(d[1], d[2], d[3]); j.yaw = d[4]; j.pitch = d[5]; j.agachado = !!d[6]; j.vivo = !!d[7]; j.armadura = d[8] | 0;
         }
-        m.r.forEach((d, i) => { const r = mp.refens[i]; if (r) { r.pos.set(d[0], d[1], d[2]); r.estado = d[3]; r.lider = d[4]; } });
+        m.r.forEach((d, i) => { const r = mp.refens[i]; if (r) { r.pos.set(d[0], d[1], d[2]); r.estado = d[3]; r.lider = d[4]; r.prot = d[5] | 0; } });
         sincronizarMarionetes(m.m);
         break;
       case "tiro": tiroRemoto(m); break;
@@ -624,7 +627,7 @@
       r.pos.set(REFENS[i][0], SALA.chao, REFENS[i][1]); r.cur.copy(r.pos); r.vel.set(0, 0, 0); r.casa.copy(r.pos); r.trilha = [];
       r.estado = 0; r.lider = null; r.hp = dif().refem.tirosCabeca; r.jaSolto = false; r.caminho = null; r.caminhoT = 0;
       r.passoT = Math.random(); r.passo = [0, 0]; r.ladoT = 0; r.lado = 1; r.tiroT = 1.5; r.noChao = true;
-      r.yaw = -Math.PI / 2; r.miraT = 0;        // de frente para a porta e para os Policiais
+      r.yaw = -Math.PI / 2; r.miraT = 0; r.prot = 3;        // começa de colete (1) e capacete (2)        // de frente para a porta e para os Policiais
     });
   }
   // só o anfitrião
@@ -751,9 +754,11 @@
   /* ------------------------------------------------------- modelos baixados */
   // Policiais e Terroristas usam um soldado pronto (modelos/soldado.glb, do repositório do Three.js), com esqueleto e
   // animações de parado, andando e correndo. Se o arquivo não carregar, fica o boneco feito por código.
-  // A refém mulher e a criança usam um modelo de mulher do mesmo repositório (modelos/civil.glb), que não traz animação
-  // de andar: as do soldado são adaptadas ao esqueleto dela na hora de carregar.
+  // Os reféns e os Terroristas usam um homem de roupa comum do mesmo repositório (modelos/civil2.glb), que não traz
+  // animação: a passada e os braços dele são movidos pelo código. A cor da roupa muda de um para outro.
   let soldado = null, civilModelo = null;
+  const CORPO_CIVIL = { cabeca: 1.72, raio: 0.142, peito: 0.15, tronco: 1.29 };      // onde ficam a cabeça e o tronco do modelo civil (m)
+  const VIRAR_CIVIL = true;        // true se, com as animações adaptadas, o modelo civil sair virado para trás
   async function carregarModelos() {
     try {
       const [{ GLTFLoader }, SU] = await Promise.all([import("./lib/GLTFLoader.js"), import("./lib/SkeletonUtils.js")]);
@@ -762,10 +767,11 @@
       soldado = { cena: g.scene, clips: g.animations.filter(c => c.name !== "TPose"), clonar: SU.clone, mats: {} };
       for (const j of mp.jogadores.values()) removerBoneco(j);          // quem já tinha o boneco antigo troca pelo novo
       try {
-        const c = await carregador.loadAsync("./modelos/civil.glb");
+        const c = await carregador.loadAsync("./modelos/civil2.glb");
         g.scene.updateMatrixWorld(true); c.scene.updateMatrixWorld(true);
-        const clips = soldado.clips.map(k => { const r = SU.retargetClip(malhaDe(c.scene), malhaDe(g.scene), k, { hip: "mixamorigHips" }); r.name = k.name; return r; });
-        civilModelo = { cena: c.scene, clips, clonar: SU.clone, mats: {}, naMalha: true };
+        const clips = [];          // sem animação pronta: pernas e braços são movidos pelo código (ver posarModelo)
+        civilModelo = { cena: c.scene, clips, clonar: SU.clone, mats: {}, virado: VIRAR_CIVIL };
+        for (const j of mp.jogadores.values()) if (j.time === "t") removerBoneco(j);
         for (const r of mp.refens) if (r.civil.modelo) { const visivel = r.boneco.grupo.visible; removerBoneco(r); r.boneco = criarBoneco({ armado: false, civil: r.civil }); r.boneco.grupo.visible = visivel; }
       } catch (e) { console.warn("[mp] o modelo civil não carregou; os reféns ficam com o boneco feito por código", e); }
     } catch (e) { console.warn("[mp] o modelo do soldado não carregou; fica o boneco feito por código", e); }
@@ -774,17 +780,26 @@
   // faixa do time nos braços e o ponto onde a arma fica
   function criarDoModelo(fonte, { nome, css, time, civil }) {
     const T = G.THREE, grupo = new T.Group(), modelo = new T.Group(), cena = fonte.clonar(fonte.cena), ossos = {}, chave = time || civil.quem;
-    const cor = time === "p" ? 0x4f6fe6 : time === "t" ? 0xfff2dc : civil.tom || 0xffffff;
+    const cor = time === "p" && fonte === soldado ? 0x4f6fe6 : 0xffffff, liso = {};
+    if (fonte === civilModelo) {         // roupa de uma cor só: refém de macacão laranja; terrorista de camisa verde-escura e calça cáqui
+      liso.Wolf3D_Outfit_Top = civil ? 0xf08a00 : 0x3d4a36; liso.Wolf3D_Outfit_Bottom = civil ? 0xf08a00 : 0xa8946a;
+    }
     let visor = null, malha = null;
     cena.traverse(o => {
       if (o.isBone) ossos[o.name.replace("mixamorig", "")] = o;
       if (!o.isMesh) return;
       o.userData.emprestado = true; o.frustumCulled = false; o.castShadow = true; malha = malha || o;
       if (/visor/i.test(o.name)) return void (visor = o);
-      if (!fonte.mats[chave]) { fonte.mats[chave] = o.material.clone(); fonte.mats[chave].color.set(cor); }
-      o.material = fonte.mats[chave];
+      if (fonte === civilModelo && /Headwear/i.test(o.material.name)) return void (o.visible = false);      // sem o chapéu
+      const lisa = liso[o.material.name], id = chave + o.material.uuid;
+      if (lisa == null && cor === 0xffffff) return;
+      if (!fonte.mats[id]) {
+        const c = fonte.mats[id] = o.material.clone();
+        if (lisa != null) { c.map = null; c.color.set(lisa); c.roughness = 0.85; c.metalness = 0; } else c.color.multiply(new T.Color(cor));
+      }
+      o.material = fonte.mats[id];
     });
-    if (fonte.naMalha) cena.rotation.y = Math.PI;          // com as animações adaptadas, o modelo civil sai virado para trás
+    if (fonte.virado) cena.rotation.y = Math.PI;
     modelo.add(cena); grupo.add(modelo);
     const mixer = new T.AnimationMixer(fonte.naMalha ? malha : cena), acoes = {};
     for (const c of fonte.clips) { const a = acoes[c.name] = mixer.clipAction(c); a.play(); a.setEffectiveWeight(c.name === "Idle" ? 1 : 0); }
@@ -792,22 +807,62 @@
       const mFaixa = new T.MeshStandardMaterial({ color: ROUPAS[time].faixa, emissive: ROUPAS[time].faixa, emissiveIntensity: 0.7, roughness: 0.8 });
       for (const n of ["LeftArm", "RightArm"]) { const f = new T.Mesh(new T.CylinderGeometry(7.2, 7.2, 6, 14), mFaixa); f.position.y = 13; ossos[n].add(f); }   // medidas do osso em cm
     }
+    let coleteM = null, capaceteM = null;
+    if (fonte === civilModelo) {     // peças presas aos ossos: balaclava, lenço e bandoleira do terrorista; colete e capacete de quem tem
+      grupo.updateMatrixWorld(true);
+      const tx = texturasDeRoupa(), pano = hex => new T.MeshStandardMaterial({ color: hex, roughness: 0.9, map: tx.tecido, bumpMap: tx.tecido, bumpScale: 1.2 }), C = CORPO_CIVIL;
+      const por = (osso, obj, x, y, z) => { obj.position.set(x, y, z); modelo.add(obj); obj.updateMatrixWorld(true); ossos[osso].attach(obj); return obj; };
+      const malha = (geo, mat) => { const o = new T.Mesh(geo, mat); o.castShadow = true; return o; };
+      if (time === "t") {
+        const preto = pano(0x17181a);
+        por("Head", malha(new T.SphereGeometry(C.raio, 20, 16), preto), 0, C.cabeca, -0.012).scale.set(0.98, 1.12, 1.1);
+        por("Head", malha(new T.CylinderGeometry(C.raio * 0.62, C.raio * 0.74, 0.13, 16), preto), 0, C.cabeca - C.raio * 0.95, 0.01);                  // gola da balaclava
+        por("Head", malha(new T.BoxGeometry(0.135, 0.034, 0.03), new T.MeshStandardMaterial({ color: 0xb98a6b, roughness: 0.6 })), 0, C.cabeca + 0.02, -C.raio * 1.07);
+        for (const x of [-0.034, 0.034]) por("Head", malha(new T.SphereGeometry(0.011, 8, 8), new T.MeshStandardMaterial({ color: 0x0c0c0c })), x, C.cabeca + 0.02, -C.raio * 1.17);
+        const lenco = por("Spine2", malha(new T.TorusGeometry(0.085, 0.035, 8, 18), pano(0x8a2f25)), 0, C.cabeca - C.raio - 0.085, 0.005); lenco.rotateX(Math.PI / 2);
+        const fita = por("Spine1", malha(new T.BoxGeometry(0.065, 0.56, 0.03), pano(0x3a2a1c)), 0, C.tronco, -C.peito); fita.rotateZ(0.62);                // bandoleira
+        for (const k of [-0.15, -0.05, 0.05, 0.15]) { const b = por("Spine1", malha(new T.BoxGeometry(0.045, 0.07, 0.035), pano(0x5a4630)), k * 0.6, C.tronco - k * 0.85, -C.peito - 0.025); b.rotateZ(0.62); }
+      }
+      coleteM = new T.Group();
+      const lona = pano(time ? 0x20242a : 0x2b3138), bolso = pano(0x3f4650);
+      const corpo = malha(new T.CylinderGeometry(0.235, 0.215, 0.4, 18), lona); corpo.scale.z = 0.8; coleteM.add(corpo);
+      for (const x of [-0.11, 0.11]) { const a = malha(new T.BoxGeometry(0.08, 0.07, 0.3), lona); a.position.set(x, 0.215, 0); coleteM.add(a); }
+      for (const x of [-0.11, 0, 0.11]) { const p = malha(new T.BoxGeometry(0.09, 0.11, 0.05), bolso); p.position.set(x, -0.08, -0.195); coleteM.add(p); }
+      por("Spine1", coleteM, 0, C.tronco, 0); coleteM.visible = false;
+      capaceteM = new T.Group();
+      const casco = malha(new T.SphereGeometry(C.raio + 0.02, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), new T.MeshStandardMaterial({ color: time ? 0x2b2d24 : 0x3f4a3a, roughness: 0.5, metalness: 0.25 })); casco.scale.set(0.98, 1.05, 1.1); capaceteM.add(casco);
+      for (const x of [-(C.raio + 0.012), C.raio + 0.012]) { const j = malha(new T.BoxGeometry(0.012, 0.12, 0.03), pano(0x15171a)); j.position.set(x, -0.06, 0); capaceteM.add(j); }
+      por("Head", capaceteM, 0, C.cabeca + 0.03, -0.01); capaceteM.visible = false;
+    }
     const pivo = new T.Group(); pivo.position.set(0, 1.4, -0.02); modelo.add(pivo);          // a arma gira aqui, na altura do ombro
-    const lado = fonte.naMalha ? -1 : 1, arma = new T.Group(); arma.position.set(0.15 * lado, -0.1, -0.38); pivo.add(arma);   // lado: no modelo virado, a mão direita fica do outro lado
+    const lado = fonte.virado ? -1 : 1, arma = new T.Group(); arma.position.set(0.15 * lado, -0.1, -0.38); pivo.add(arma);   // lado: no modelo virado, a mão direita fica do outro lado
     let placa = null;
     if (time) { placa = criarPlaca(nome, css); placa.position.y = 2.05; grupo.add(placa); }
     if (civil) grupo.scale.setScalar(civil.escala);
     grupo.visible = false; G.scene.add(grupo); grupo.updateMatrixWorld(true);
     const dist = (a, b) => ossos[a].getWorldPosition(new V3()).distanceTo(ossos[b].getWorldPosition(new V3()));
-    const b = { grupo, modelo, mixer, acoes, ossos, pivo, arma, placa, capacete: visor || new T.Group(), colete: new T.Group(), bone: new T.Group(), cordas: [], armaChave: null, lado,
+    // pose de repouso de pernas e braços (direção até o osso seguinte), medida no espaço do modelo
+    const repouso = {}, qm = modelo.getWorldQuaternion(new T.Quaternion()).invert();
+    for (const [n, f] of [["LeftUpLeg", "LeftLeg"], ["LeftLeg", "LeftFoot"], ["RightUpLeg", "RightLeg"], ["RightLeg", "RightFoot"], ["LeftArm", "LeftForeArm"], ["LeftForeArm", "LeftHand"], ["RightArm", "RightForeArm"], ["RightForeArm", "RightHand"]])
+      if (ossos[n] && ossos[f]) repouso[n] = { q: qm.clone().multiply(ossos[n].getWorldQuaternion(new T.Quaternion())), dir: ossos[f].getWorldPosition(new V3()).sub(ossos[n].getWorldPosition(new V3())).applyQuaternion(qm).normalize() };
+    const b = { grupo, modelo, mixer, acoes, repouso, semClipes: !fonte.clips.length, ossos, pivo, arma, placa, capacete: capaceteM || visor || new T.Group(), colete: coleteM || new T.Group(), bone: new T.Group(), cordas: [], armaChave: null, lado,
       braco: dist("RightArm", "RightForeArm"), ante: dist("RightForeArm", "RightHand"), ult: new V3(), andar: 0, fase: 0 };
     if (civil) { armarBoneco(b, "p_pistola"); arma.visible = false; }
     return b;
   }
-  // vira um osso para que ele aponte numa direção do mundo (o eixo y do osso vai até o osso seguinte)
-  function apontarOsso(osso, dir) {
-    const T = G.THREE, q = new T.Quaternion().setFromUnitVectors(new V3(0, 1, 0), dir.clone().normalize());
-    osso.quaternion.copy(osso.parent.getWorldQuaternion(new T.Quaternion()).invert().multiply(q));
+  // vira um osso para que ele aponte numa direção do mundo. No modelo sem animação pronta gira a partir da pose de
+  // repouso (não torce o membro); no soldado, o eixo y do osso vai até o osso seguinte.
+  function apontarOsso(osso, dir, b, nome) {
+    const T = G.THREE, pai = osso.parent.getWorldQuaternion(new T.Quaternion()).invert(), r = b && b.semClipes && b.repouso[nome];
+    if (!r) return void osso.quaternion.copy(pai.multiply(new T.Quaternion().setFromUnitVectors(new V3(0, 1, 0), dir.clone().normalize())));
+    const qm = b.modelo.getWorldQuaternion(new T.Quaternion()), local = dir.clone().normalize().applyQuaternion(qm.clone().invert());
+    osso.quaternion.copy(pai.multiply(qm).multiply(new T.Quaternion().setFromUnitVectors(r.dir, local)).multiply(r.q));
+  }
+  // modelo sem animação pronta: aponta um osso numa direção dada no espaço do modelo (frente = -z, direita = +x)
+  function apontarLocal(b, nome, x, y, z) {
+    const o = b.ossos[nome]; if (!o || !b.repouso[nome]) return;
+    apontarOsso(o, new V3(x, y, z).applyQuaternion(b.modelo.getWorldQuaternion(new G.THREE.Quaternion())), b, nome);
+    o.updateWorldMatrix(false, true);
   }
   // dobra ombro e cotovelo para a mão chegar num ponto do mundo (lado = "Right" ou "Left"; fora = para que lado o cotovelo abre)
   function alcancar(b, lado, alvo, fora) {
@@ -815,8 +870,8 @@
     const d = Math.min(para.length(), (l1 + l2) * 0.98), dir = para.normalize(), a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
     const cot = new V3(fora, -0.9, 0).applyQuaternion(b.grupo.quaternion); cot.addScaledVector(dir, -cot.dot(dir)).normalize();
     const E = S.clone().addScaledVector(dir, a).addScaledVector(cot, h);
-    apontarOsso(om, E.clone().sub(S)); om.updateWorldMatrix(false, true);
-    apontarOsso(b.ossos[lado + "ForeArm"], S.clone().addScaledVector(dir, d).sub(E));
+    apontarOsso(om, E.clone().sub(S), b, lado + "Arm"); om.updateWorldMatrix(false, true);
+    apontarOsso(b.ossos[lado + "ForeArm"], S.clone().addScaledVector(dir, d).sub(E), b, lado + "ForeArm");
   }
   // o soldado no lugar: animação conforme a velocidade, arma apontada (com as mãos nela), agachado, rastejando e caído
   function posarModelo(b, cur, yaw, k, dt, o) {
@@ -825,9 +880,21 @@
     let d = yaw - b.grupo.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); b.grupo.rotation.y += d * k;
     b.andar += (Math.min(vel, 9) - b.andar) * Math.min(1, 10 * dt);
     const v = b.andar, alvo = !o.vivo ? "Idle" : v > 2.6 ? "Run" : v > 0.35 ? "Walk" : "Idle";
-    for (const n in b.acoes) { const a = b.acoes[n], w = a.getEffectiveWeight(); a.setEffectiveWeight(w + ((n === alvo ? 1 : 0) - w) * Math.min(1, 8 * dt)); }
-    b.acoes.Walk.timeScale = Math.max(0.6, Math.min(1.8, v / 1.5)); b.acoes.Run.timeScale = Math.max(0.7, Math.min(1.7, v / 4.2));
-    if (o.vivo) b.mixer.update(dt);
+    if (b.semClipes) {                // passada e braços pelo código
+      b.grupo.updateMatrixWorld(true);
+      b.fase += Math.min(v, 6) * dt * 2.6;
+      const amp = o.vivo ? Math.min(1, v / 3) * (deitado ? 0.4 : 1) : 0, s = Math.sin(b.fase) * amp;
+      for (const [L, sinal, x] of [["Left", 1, -1], ["Right", -1, 1]]) {
+        const a = s * sinal * 0.7, j = a - Math.max(0, -s * sinal) * 0.9;
+        apontarLocal(b, L + "UpLeg", 0, -Math.cos(a), -Math.sin(a)); apontarLocal(b, L + "Leg", 0, -Math.cos(j), -Math.sin(j));
+        const br = -s * sinal * 0.45;         // o braço balança ao contrário da perna
+        apontarLocal(b, L + "Arm", x * b.lado * 0.16, -Math.cos(br), -Math.sin(br)); apontarLocal(b, L + "ForeArm", x * b.lado * 0.06, -Math.cos(br + 0.25), -Math.sin(br + 0.25));
+      }
+    } else {
+      for (const n in b.acoes) { const a = b.acoes[n], w = a.getEffectiveWeight(); a.setEffectiveWeight(w + ((n === alvo ? 1 : 0) - w) * Math.min(1, 8 * dt)); }
+      b.acoes.Walk.timeScale = Math.max(0.6, Math.min(1.8, v / 1.5)); b.acoes.Run.timeScale = Math.max(0.7, Math.min(1.7, v / 4.2));
+      if (o.vivo) b.mixer.update(dt);
+    }
     m.rotation.x += ((!o.vivo || deitado ? -Math.PI / 2 : 0) - m.rotation.x) * k;          // caído ou rastejando: de bruços
     m.position.y += ((!o.vivo ? 0.18 : deitado ? 0.22 : 0) - m.position.y) * k;
     m.position.z += ((deitado ? 0.8 : 0) - m.position.z) * k;
@@ -839,10 +906,10 @@
       b.grupo.updateMatrixWorld(true);
       alcancar(b, "Right", b.arma.localToWorld(new V3(0, -0.09, 0.07)), b.lado);
       if (longa) alcancar(b, "Left", b.arma.localToWorld(new V3(0, -0.04, -0.24)), -b.lado);
-      else if (b.lado < 0) alcancar(b, "Left", m.localToWorld(new V3(0.26, 0.84, 0.02)), -b.lado);      // no modelo civil o braço livre fica ao lado do corpo
-    } else if (o.vivo && o.pose === "preso") {          // pulsos amarrados à frente do corpo
+    } else if (o.vivo && o.pose === "preso") {          // pulsos amarrados (para trás no modelo civil, à frente nos outros)
       b.grupo.updateMatrixWorld(true);
-      alcancar(b, "Right", m.localToWorld(new V3(0.05 * b.lado, 0.95, -0.2)), b.lado); alcancar(b, "Left", m.localToWorld(new V3(-0.05 * b.lado, 0.95, -0.2)), -b.lado);
+      const z = b.semClipes ? 0.17 : -0.2;
+      alcancar(b, "Right", m.localToWorld(new V3(0.05 * b.lado, 0.97, z)), b.lado); alcancar(b, "Left", m.localToWorld(new V3(-0.05 * b.lado, 0.97, z)), -b.lado);
     }
   }
 
@@ -872,6 +939,7 @@
     return texturas;
   }
   function criarBoneco({ nome, css, armado, civil, time }) {
+    if (armado && time === "t" && civilModelo) return criarDoModelo(civilModelo, { nome, css, time });      // terrorista: gente comum de balaclava
     if (armado && soldado) return criarDoModelo(soldado, { nome, css, time });
     if (civil && civil.modelo && civilModelo) return criarDoModelo(civilModelo, { civil });
     const T = G.THREE, grupo = new T.Group(), corpo = new T.Group(), tronco = new T.Group(), r = civil || ROUPAS[time], tx = texturasDeRoupa();
@@ -1083,6 +1151,7 @@
       r.boneco.grupo.visible = r.estado !== 2;
       posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: false, pitch: 0, pose: r.estado === 1 ? "pistola" : "preso", sentado: r.estado === 0 && !!r.civil.senta && !r.boneco.modelo, deitado: noDuto(r.cur) });
       r.boneco.arma.visible = r.estado === 1;                 // solto pelo policial, já armado
+      r.boneco.colete.visible = !!(r.prot & 1) && r.estado !== 3; r.boneco.capacete.visible = !!(r.prot & 2) && r.estado !== 3;
     }
   }
 
@@ -1121,8 +1190,8 @@
           const q = (opt.damage || 28) * (h.cabeca ? CFG.danoCabeca : 1);
           G.combat.stats.shots++; G.combat.stats.hits++;
           if (h.j) enviar({ t: "acerto", em: h.j.id, q, de: arr(o), c: h.cabeca ? 1 : 0 });
-          else if (h.cabeca) enviar({ t: "acertoRefem", i: h.r.i });      // refém só se fere com tiro na cabeça
-          if (h.j || h.cabeca) G.hud.hitmarker(h.cabeca ? "weak" : "hit");
+          else enviar({ t: "acertoRefem", i: h.r.i, c: h.cabeca ? 1 : 0 });      // refém só se fere com tiro na cabeça; no corpo, só perde o colete
+          G.hud.hitmarker(h.cabeca ? "weak" : "hit");
           try { G.fx.sparks(h.ponto, dir.clone().negate(), 5); } catch {}
           tocar("impact_enemy", { pos: h.ponto });
           return { point: h.ponto, normal: dir.clone().negate(), dist: h.dist, surface: "enemy", enemy: null, dir, from: "player" };
@@ -1899,7 +1968,11 @@
     }
     for (const r of mp.refens) {
       const d = r.pos.distanceTo(pos);
-      if (d < cfg.raio) ferirRefem(r, Math.round(cfg.dano * (1 - d / cfg.raio) / 50), por);   // explosão perto também fere
+      if (d < cfg.raio) {                          // explosão perto também fere; o colete segura a primeira pancada
+        let golpes = Math.round(cfg.dano * (1 - d / cfg.raio) / 50);
+        if (golpes > 0 && (r.prot & 1)) { r.prot &= ~1; golpes--; }
+        ferirRefem(r, golpes, por);
+      }
     }
   }
   function explosivosDoAnfitriao(dt) {
@@ -2234,7 +2307,7 @@
         if (j) enviar({ t: "estado", p: arr(p.pos), y: +p.yaw.toFixed(3), x: +p.pitch.toFixed(3), c: p.crouching ? 1 : 0, v: j.vivo ? 1 : 0, a: (mp.colete ? 1 : 0) | (mp.capacete ? 2 : 0) });
         if (mp.anfitriao) paraTodos({ t: "estados", tempo: +mp.tempo.toFixed(1),
           j: [...mp.jogadores.values()].map(x => [x.id, ...arr(x.pos), +x.yaw.toFixed(3), +x.pitch.toFixed(3), x.agachado ? 1 : 0, x.vivo ? 1 : 0, x.armadura | 0]),
-          r: mp.refens.map(r => [...arr(r.pos), r.estado, r.lider]),
+          r: mp.refens.map(r => [...arr(r.pos), r.estado, r.lider, r.prot | 0]),
           m: G.enemies.list.filter(e => e.alive).map(e => [e.id, e.type === "hound" ? 1 : 0, ...arr(e.pos), +(e.yaw || 0).toFixed(2)]) }, mp.meuId);
       }
       mp.placarT -= dt;

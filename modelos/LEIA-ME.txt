@@ -1,9 +1,10 @@
 Modelos 3D usados no multiplayer do Saltline
 
-soldado.glb  Policiais e Terroristas. Arquivo "Soldier.glb" dos exemplos do Three.js (r180):
+soldado.glb  Policiais. Arquivo "Soldier.glb" dos exemplos do Three.js (r180):
              https://github.com/mrdoob/three.js/tree/r180/examples/models/gltf
              Personagem e animações de origem Mixamo (Adobe).
-civil.glb    Refém mulher e criança. Arquivo "Michelle.glb" dos mesmos exemplos, também de origem Mixamo.
+civil2.glb   Reféns e Terroristas. Arquivo "readyplayer.me.glb" dos mesmos exemplos (avatar Ready Player Me).
+             Não traz animação: a passada e os braços são movidos pelo código do jogo.
 
 A pasta lib/ traz o carregador de modelos do Three.js r180 (GLTFLoader, SkeletonUtils, BufferGeometryUtils),
 licença MIT, com uma única adaptação: usa o Three.js que já vem dentro do jogo.
