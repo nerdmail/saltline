@@ -874,7 +874,7 @@
     try { G.weapon.name = nomeArmaOriginal; aplicarModelo(null); animarFaca(0, false); } catch {}
     for (const j of mp.jogadores.values()) if (j.boneco) j.boneco.grupo.visible = false;
     for (const r of mp.refens) r.boneco.grupo.visible = false;
-    placarEl.hidden = true; vidaEl.hidden = true; tabEl.hidden = true;
+    placarEl.hidden = true; vidaEl.hidden = true; tabEl.hidden = true; if (mapaEl) mapaEl.hidden = true;
     { const ve = document.getElementById("versao"); if (ve) ve.hidden = false; }
   }
   // objetivo, contador e marcadores do HUD; refaz só quando a situação dos reféns muda
@@ -3467,6 +3467,42 @@
   /* --------------------------------------------------------- laço da partida */
   let placarEl = null;
   // vida bem visível embaixo, no meio: número grande e barra que muda de cor
+  // MAPA (lado direito): o pátio visto de cima, com o norte para cima. Mostra você (seta), os colegas de time (bolinhas com o
+  // nome), os reféns e, para os Policiais, o ponto de resgate. Inimigos não aparecem.
+  let mapaEl = null, mapaFundo = null, mapaT = 0;
+  const MAPA = { x0: -38, x1: 30, z0: -30, z1: 58, larg: 176 };
+  function fundoDoMapa() {
+    const esc = MAPA.larg / (MAPA.x1 - MAPA.x0), cv = document.createElement("canvas"); cv.width = MAPA.larg; cv.height = Math.round((MAPA.z1 - MAPA.z0) * esc);
+    const c = cv.getContext("2d"); c.fillStyle = "rgba(11,13,15,.78)"; c.fillRect(0, 0, cv.width, cv.height);
+    for (const b of G.physics.boxes) {
+      if (b.bulletOnly || b.playerOnly || b.max.y < 1.2 || b.min.y > 1.5 || b.max.x - b.min.x > 60 || b.max.z - b.min.z > 60) continue;
+      c.fillStyle = b.max.y > 6 ? "rgba(232,228,218,.34)" : "rgba(232,228,218,.2)";
+      c.fillRect((b.min.x - MAPA.x0) * esc, (b.min.z - MAPA.z0) * esc, Math.max(1, (b.max.x - b.min.x) * esc), Math.max(1, (b.max.z - b.min.z) * esc));
+    }
+    c.strokeStyle = "rgba(232,228,218,.5)"; c.lineWidth = 1; c.strokeRect(0.5, 0.5, cv.width - 1, cv.height - 1);
+    return cv;
+  }
+  function desenharMapa(dt) {
+    if (!mapaEl) return;
+    const j = eu(), mostra = emRodada() && !!j && !!j.time;
+    mapaEl.hidden = !mostra; if (!mostra) return;
+    mapaT -= dt; if (mapaT > 0) return; mapaT = 0.1;
+    if (!mapaFundo || mapaFundo.rodada !== mp.rodada) { mapaFundo = fundoDoMapa(); mapaFundo.rodada = mp.rodada; mapaEl.width = mapaFundo.width; mapaEl.height = mapaFundo.height; }
+    const c = mapaEl.getContext("2d"), esc = MAPA.larg / (MAPA.x1 - MAPA.x0), X = x => (x - MAPA.x0) * esc, Z = z => (z - MAPA.z0) * esc;
+    c.clearRect(0, 0, mapaEl.width, mapaEl.height); c.drawImage(mapaFundo, 0, 0);
+    if (j.time === "p" && mp.resgateVisto) { const r = mp.resgateVisto; c.strokeStyle = "#ffd27a"; c.lineWidth = 2; c.beginPath(); c.arc(X(r.x), Z(r.z), RAIO_RESGATE * esc, 0, 6.3); c.stroke(); }
+    if (j.time === "p") for (const r of mp.refens) if (r.estado < 2) { c.fillStyle = "#f08a00"; c.fillRect(X(r.cur.x) - 2.5, Z(r.cur.z) - 2.5, 5, 5); }
+    c.font = "600 9px sans-serif"; c.textAlign = "center";
+    for (const o of mp.jogadores.values()) {
+      if (o.id === mp.meuId || o.time !== j.time || !o.naRodada && !o.vivo) continue;
+      const x = X(o.cur.x), z = Z(o.cur.z); if (o.cur.y < -40) continue;
+      c.fillStyle = o.vivo ? TIMES[j.time].css : "rgba(232,228,218,.35)"; c.beginPath(); c.arc(x, z, 3.2, 0, 6.3); c.fill();
+      if (o.vivo && !o.bot) { c.fillStyle = "#e8e4da"; c.fillText(String(o.nome).slice(0, 8), x, z - 6); }
+    }
+    const p = G.player, yaw = p.yaw;                    // você: seta apontando para onde olha
+    c.save(); c.translate(X(p.pos.x), Z(p.pos.z)); c.rotate(-yaw); c.fillStyle = "#ffffff"; c.strokeStyle = "#0b0d0f"; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(0, -7); c.lineTo(4.5, 5); c.lineTo(0, 2.5); c.lineTo(-4.5, 5); c.closePath(); c.fill(); c.stroke(); c.restore();
+  }
   let vidaEl = null, tabEl = null;
   function desenharVida() {
     const p = G.player, v = p.alive ? Math.max(0, Math.round(p.health)) : 0, max = p.maxHealth || 100;
@@ -3533,7 +3569,7 @@
       }
       mp.placarT -= dt;
       if (mp.placarT <= 0) { mp.placarT = 0.25; desenharPlacar(); if (!tabEl.hidden) desenharTab(); }
-      desenharVida();
+      desenharVida(); desenharMapa(dt);
       return true;
     },
   };
@@ -3566,6 +3602,7 @@
       }
       return r;
     };
+    mapaEl = document.createElement("canvas"); mapaEl.className = "mp-mapa"; mapaEl.hidden = true; document.getElementById("app").appendChild(mapaEl);
     vidaEl = document.createElement("div"); vidaEl.className = "mp-vida"; vidaEl.hidden = true; document.getElementById("app").appendChild(vidaEl);
     tabEl = document.createElement("div"); tabEl.className = "mp-tab"; tabEl.hidden = true; document.getElementById("app").appendChild(tabEl);
     placarEl = document.createElement("div"); placarEl.className = "mp-placar"; placarEl.hidden = true;

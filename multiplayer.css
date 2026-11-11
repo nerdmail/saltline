@@ -111,3 +111,8 @@
 .mp-portao[hidden] { display: none; }
 .mp-portao b { display: block; font: 900 64px/1 var(--f-display); letter-spacing: .06em; color: var(--signal); }
 .mp-portao span { display: block; margin-top: 16px; font: 600 16px/1.2 var(--f-label); letter-spacing: .22em; text-transform: uppercase; }
+
+/* mapa do lado direito */
+.mp-mapa { position: absolute; z-index: 29; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(86px + env(safe-area-inset-top, 0px)); width: 176px; height: auto; border: 1px solid var(--line); pointer-events: none; }
+.mp-mapa[hidden] { display: none; }
+@media (max-height: 560px) { .mp-mapa { width: 120px; } }
