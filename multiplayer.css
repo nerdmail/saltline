@@ -48,11 +48,16 @@
   color: var(--bone-dim); text-shadow: var(--shadow); pointer-events: none; }
 .mp-bolsa b { color: var(--signal); font-size: 15px; margin-left: 4px; }
 
-/* dicas em sanfona na sala de espera */
-.mp-dicas { margin-top: 14px; }
-.mp-dicas > summary { display: inline-block; cursor: pointer; list-style: none; }
-.mp-dicas > summary::-webkit-details-marker { display: none; }
-.mp-dicas[open] > summary { color: var(--signal); border-color: var(--signal); }
+/* dicas: janela por cima da sala de espera, com entrada suave */
+.mp-acoes-dicas { margin-top: 14px; }
+.mp-luz { position: absolute; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(6, 8, 10, .78);
+  opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .22s ease, visibility 0s linear .22s; }
+.mp-luz.aberta { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .22s ease; }
+.mp-luz-caixa { width: min(760px, 100%); max-height: 100%; overflow-y: auto; padding: 26px 28px 24px; background: var(--plate-solid); border: 1px solid var(--line); border-top: 3px solid var(--signal); color: var(--bone);
+  transform: translateY(18px) scale(.97); transition: transform .26s cubic-bezier(.2, .8, .2, 1); }
+.mp-luz.aberta .mp-luz-caixa { transform: none; }
+.mp-luz .mp-regras { margin-top: 4px; }
+@media (max-width: 520px) { .mp-luz-caixa { padding: 20px 16px; } .mp-regras b { display: block; min-width: 0; } }
 
 /* vida, embaixo no meio */
 .mp-vida { position: absolute; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(22px + env(safe-area-inset-bottom, 0px));

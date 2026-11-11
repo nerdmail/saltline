@@ -575,6 +575,36 @@
     if (mp.anfitriao) mandarLobby(); else desenharLobby();
   }
   function linkDaSala() { return location.origin + location.pathname + "?sala=" + mp.codigo; }
+  // as dicas abrem numa janela por cima da sala de espera (clicar fora, no botão ou apertar Esc fecha)
+  const DICAS = `<ul class="mp-regras">
+        <li><b>Objetivo</b> Policiais soltam os reféns (segure E) e levam ao ponto de resgate mostrado no painel da sala. Terroristas impedem até o tempo acabar.</li>
+        <li><b>Fim da rodada</b> Todos os reféns salvos, um refém morto, um time inteiro caído ou o tempo esgotado.</li>
+        <li><b>Sniper</b> Um tiro a cada 3 segundos, zoom de 5x no botão direito. Mata jogador com um tiro, com ou sem colete; refém precisa de dois.</li>
+        <li><b>Pistola reserva</b> Quem está só de faca ou de sniper também leva uma pistola de 9 tiros: aperte 2 (ou Q). De pistola na mão os passos fazem barulho; de faca, não.</li>
+        <li><b>Lugares altos</b> Vários containers, o telhado do galpão e um mirante na torre do guindaste têm escada de mão. Para descer: olhe para baixo e aperte W.</li>
+        <li><b>Armas</b> Todos nascem com a faca. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
+        <li><b>Explosivos</b> Pegue passando por cima. 4 joga a granada; B arma a bomba no chão onde você está; V arma a bomba-relógio (T muda o tempo). Qualquer um desarma segurando E perto dela.</li>
+        <li><b>Bots</b> Quando a partida começa, cada time é completado com bots até ficar com 5 (no máximo 10 na partida). O nome deles começa com "Bot". Eles só combatem, não mexem nos reféns, e ficam mais difíceis conforme a dificuldade da sala.</li>
+        <li><b>Quem cai</b> Fica assistindo um jogador vivo até a rodada acabar. A barra de espaço troca de jogador.</li>
+        <li><b>Placar</b> Segure Tab para ver quem está vivo, os abates e as vitórias de cada time.</li>
+        <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q troca de arma (1 arma, 2 pistola, 3 faca) · 4 granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
+        <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura metade de um tiro no corpo; o capacete salva de um tiro na cabeça. Cada um aguenta um tiro só.</li>
+        <li><b>Sala dos reféns</b> Tem 4 portas secretas numeradas (cada uma leva sempre ao mesmo lugar) e uma escada de mão até o duto de ar.</li>
+        <li><b>Duto e telhado</b> No duto só se rasteja; ele leva a escadas para o chão e para o telhado. Na escada: W sobe; olhando para baixo, W desce.</li>
+        <li><b>Queda</b> Cair de muito alto tira metade da vida.</li>
+        <li><b>Reféns</b> Só morrem com tiro na cabeça. Soltos, andam armados e atiram nos Terroristas.</li>
+      </ul>`;
+  let dicasEl = null;
+  function abrirDicas(abre) {
+    if (!dicasEl) {
+      dicasEl = document.createElement("div"); dicasEl.className = "mp-luz";
+      dicasEl.innerHTML = `<div class="mp-luz-caixa"><div class="mp-k">Como jogar</div><h2 class="mp-h">Dicas</h2>${DICAS}<div class="mp-acoes"><button class="btn primary" data-fechar>Fechar</button></div></div>`;
+      dicasEl.addEventListener("click", ev => { if (ev.target === dicasEl || ev.target.closest("[data-fechar]")) abrirDicas(false); });
+      document.getElementById("app").appendChild(dicasEl);
+      window.addEventListener("keydown", ev => { if (ev.code === "Escape" && dicasEl.classList.contains("aberta")) { ev.stopPropagation(); abrirDicas(false); } }, true);
+    }
+    void dicasEl.offsetWidth; dicasEl.classList.toggle("aberta", abre);
+  }
   function desenharLobby() {
     if (mp.fase !== "lobby" || !mp.ativo) return;
     const lista = t => [...mp.jogadores.values()].filter(j => j.time === t)
@@ -595,25 +625,7 @@
         ? `<div class="seg">${Object.entries(DIFICULDADES).map(([k, v]) => `<button data-mp="dif-${k}" aria-pressed="${k === mp.dificuldade}">${v.nome}</button>`).join("")}</div>`
         : `<b>${d.nome}</b>`}</div>
       <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times. Vence quem fizer ${CFG.rodadasParaVencer} rodadas.</p>
-      <details class="mp-dicas" ${mp.dicasAbertas ? "open" : ""}><summary class="btn small">Ver dicas</summary>
-      <ul class="mp-regras">
-        <li><b>Objetivo</b> Policiais soltam os reféns (segure E) e levam ao ponto de resgate mostrado no painel da sala. Terroristas impedem até o tempo acabar.</li>
-        <li><b>Fim da rodada</b> Todos os reféns salvos, um refém morto, um time inteiro caído ou o tempo esgotado.</li>
-        <li><b>Sniper</b> Um tiro a cada 3 segundos, zoom de 5x no botão direito. Mata jogador com um tiro, com ou sem colete; refém precisa de dois.</li>
-        <li><b>Pistola reserva</b> Quem está só de faca ou de sniper também leva uma pistola de 9 tiros: aperte 2 (ou Q). De pistola na mão os passos fazem barulho; de faca, não.</li>
-        <li><b>Lugares altos</b> Vários containers, o telhado do galpão e um mirante na torre do guindaste têm escada de mão. Para descer: olhe para baixo e aperte W.</li>
-        <li><b>Armas</b> Todos nascem com a faca. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
-        <li><b>Explosivos</b> Pegue passando por cima. 4 joga a granada; B arma a bomba no chão onde você está; V arma a bomba-relógio (T muda o tempo). Qualquer um desarma segurando E perto dela.</li>
-        <li><b>Bots</b> Quando a partida começa, cada time é completado com bots até ficar com 5 (no máximo 10 na partida). O nome deles começa com "Bot". Eles só combatem, não mexem nos reféns, e ficam mais difíceis conforme a dificuldade da sala.</li>
-        <li><b>Quem cai</b> Fica assistindo um jogador vivo até a rodada acabar. A barra de espaço troca de jogador.</li>
-        <li><b>Placar</b> Segure Tab para ver quem está vivo, os abates e as vitórias de cada time.</li>
-        <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q troca de arma (1 arma, 2 pistola, 3 faca) · 4 granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
-        <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura metade de um tiro no corpo; o capacete salva de um tiro na cabeça. Cada um aguenta um tiro só.</li>
-        <li><b>Sala dos reféns</b> Tem 4 portas secretas numeradas (cada uma leva sempre ao mesmo lugar) e uma escada de mão até o duto de ar.</li>
-        <li><b>Duto e telhado</b> No duto só se rasteja; ele leva a escadas para o chão e para o telhado. Na escada: W sobe; olhando para baixo, W desce.</li>
-        <li><b>Queda</b> Cair de muito alto tira metade da vida.</li>
-        <li><b>Reféns</b> Só morrem com tiro na cabeça. Soltos, andam armados e atiram nos Terroristas.</li>
-      </ul></details>
+      <div class="mp-acoes mp-acoes-dicas"><button class="btn small" data-mp="dicas">Ver dicas</button></div>
       <div class="mp-acoes">
         ${mp.anfitriao ? `<button class="btn primary" data-mp="comecar">Começar partida</button>`
           : `<span class="mp-espera">${emAndamento ? "Partida em andamento — você entra na próxima rodada" : "Aguardando o anfitrião começar"}</span>`}
@@ -623,6 +635,7 @@
   }
   document.addEventListener("click", async ev => {
     const b = ev.target.closest && ev.target.closest("[data-mp]"); if (!b) return;
+    if (b.dataset.mp === "dicas") return abrirDicas(true);
     const a = b.dataset.mp;
     if (a === "criar") criarSala();
     else if (a === "sair") location.href = location.pathname;
@@ -733,7 +746,7 @@
     mp.fase = "preparo"; mp.preparoT = CFG.tempoPreparo; mp.rodada = m.n; mp.placar = m.placar; mp.dificuldade = m.dificuldade; mp.tempo = dif().tempo;
     mp.pegando = -1; mp.pegarT = 0; mp.passagemT = 0; mp.ultimoDano = null; mp.resultado = null; mp.assinatura = "";
     mp.resgateVisto = null; discoResgate.visible = false; painel.visible = false;
-    fecharOverlay(); esconderMenuSolo();
+    fecharOverlay(); esconderMenuSolo(); if (dicasEl) abrirDicas(false);
     if (!mp.anfitriao) { try { G.enemies.clear(); } catch {} mp.marionetes.clear(); }
     prepararSala(); aplicarPorta(false);
     zerarRefens(); limparExplosivos(); limparArmas(); porCarro(m.carro);
@@ -2505,7 +2518,7 @@
   }
   function limparArmas() {
     for (const id of [...mp.armasChao.keys()]) tirarArmaDoChao(id);
-    mp.arma = null; mp.principal = null; mp.municao = {}; mp.prontaEm = {}; mp.armaAntes = null; mp.rajada = 0; mp.cadT = 0; mp.armaVisivel = null; mp.gatilhoAntes = false;
+    mp.arma = null; mp.principal = null; mp.municao = {}; mp.prontaEm = {}; mp.armaAntes = null; mp.trocaPara = null; mp.rajada = 0; mp.cadT = 0; mp.armaVisivel = null; mp.gatilhoAntes = false;
   }
   function soltarArma() {
     if (!mp.principal || !emRodada()) return;      // só a arma pega no chão se solta; a faca (e a pistola reserva) ficam
@@ -2538,6 +2551,11 @@
   function armasLocais(dt) {
     const w = G.weapon, p = G.player, a = ARMAS[mp.arma], vale = p.alive && mp.fase === "valendo", gatilho = !!G.input.fire;
     mp.cadT -= dt; mp.semPegarT -= dt; mp.passoT -= dt;
+    if (mp.trocaPara) {                                    // troca de arma: a atual desce, troca lá embaixo e a nova sobe
+      mp.trocaT += dt;
+      if (mp.trocaT >= TROCA.desce && mp.arma !== mp.trocaPara) { mp.armaAntes = mp.arma; mp.arma = mp.trocaPara; tocar("reload_magin"); }
+      if (mp.trocaT >= TROCA.desce + TROCA.sobe || !p.alive) { if (mp.arma !== mp.trocaPara && p.alive) { mp.armaAntes = mp.arma; mp.arma = mp.trocaPara; } mp.trocaPara = null; }
+    }
     let pode = false;
     if (a && !a.faca && vale && mp.cadT <= 0) {
       if (w.ammo === 0 || w.state === "reloading") mp.rajada = 0;
@@ -2547,6 +2565,7 @@
     }
     if (a && a.faca && vale && gatilho && !mp.gatilhoAntes && mp.cadT <= 0) { mp.cadT = FACA.espera; facada(); }
     if (G.input.sprint && G.input.move.y > 0.55) pode = false;        // correndo a arma abaixa: não atira
+    if (mp.trocaPara) pode = false;                        // no meio da troca não atira
     mp.gatilhoAntes = gatilho; G.input.fire = pode;
     if (mp.arma !== mp.armaPente) {                      // trocou de arma: cada uma guarda a sua munição e o seu tempo de espera
       const antes = ARMAS[mp.armaPente], agora = performance.now() / 1000;
@@ -2587,11 +2606,13 @@
 
   // troca de arma como no CS: Q alterna com a última usada, 1 = arma pega no chão, 2 = pistola reserva, 3 = faca.
   // A pistola reserva (9 tiros) só existe para quem não tem arma do chão ou está de sniper.
+  const TROCA = { desce: 0.18, sobe: 0.24 };      // segundos para a arma descer e para a outra subir
   function temReserva() { return !mp.principal || !!ARMAS[mp.principal].mata; }
   function trocarArma(para) {
     const t = eu() && eu().time; if (!t || !para || para === mp.arma || !ARMAS[para]) return;
     if (ARMAS[para].reserva && !temReserva()) return;
-    mp.armaAntes = mp.arma; mp.arma = para; tocar("reload_magin");
+    if (mp.trocaPara) return;                             // já está trocando
+    mp.trocaPara = para; mp.trocaT = 0;                    // a troca em si acontece no meio do movimento (ver armasLocais)
   }
   window.addEventListener("keydown", ev => {
     if (ev.repeat || !emRodada() || mp.fase === "fim" || !G.player.alive || (tela && !tela.hidden)) return;
@@ -2830,11 +2851,15 @@
     G.weapon.update = function (...a) {
       if (emRodada() && mp.deitado && G.player.alive) { G.camera.position.y -= 0.55; G.player.eye.y -= 0.55; }
       assistir();
-      return armaAtualiza.apply(this, a);
+      const r = armaAtualiza.apply(this, a);
+      if (mp.trocaPara && emRodada()) {                    // movimento da troca: mão para baixo e para trás, depois volta com a outra arma
+        const t = mp.trocaT, k = t < TROCA.desce ? t / TROCA.desce : Math.max(0, 1 - (t - TROCA.desce) / TROCA.sobe), e = k * k * (3 - 2 * k);
+        for (const o of [G.weapon.root, facaNaMao]) if (o) { o.position.y -= e * 0.26; o.position.z += e * 0.1; o.rotation.x -= e * 0.95; o.rotation.z += e * 0.35; }
+      }
+      return r;
     };
     vidaEl = document.createElement("div"); vidaEl.className = "mp-vida"; vidaEl.hidden = true; document.getElementById("app").appendChild(vidaEl);
     tabEl = document.createElement("div"); tabEl.className = "mp-tab"; tabEl.hidden = true; document.getElementById("app").appendChild(tabEl);
-    document.addEventListener("toggle", ev => { if (ev.target.classList && ev.target.classList.contains("mp-dicas")) mp.dicasAbertas = ev.target.open; }, true);
     placarEl = document.createElement("div"); placarEl.className = "mp-placar"; placarEl.hidden = true;
     document.getElementById("app").appendChild(placarEl);
     bolsaEl = document.createElement("div"); bolsaEl.className = "mp-bolsa"; bolsaEl.hidden = true;
