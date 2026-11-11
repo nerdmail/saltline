@@ -901,9 +901,9 @@
       }
       coleteM = new T.Group();
       const lona = pano(time ? 0x20242a : 0x2b3138), bolso = pano(0x3f4650);
-      const corpo = malha(new T.CylinderGeometry(0.19, 0.172, 0.36, 18), lona); corpo.scale.z = 0.8; coleteM.add(corpo);
-      for (const x of [-0.11, 0.11]) { const a = malha(new T.BoxGeometry(0.065, 0.06, 0.26), lona); a.position.set(x * 0.85, 0.195, 0); coleteM.add(a); }
-      for (const x of [-0.11, 0, 0.11]) { const p = malha(new T.BoxGeometry(0.075, 0.09, 0.04), bolso); p.position.set(x * 0.85, -0.08, -0.158); coleteM.add(p); }
+      const corpo = malha(new T.CylinderGeometry(0.2, 0.185, 0.4, 18), lona); corpo.scale.z = 0.92; coleteM.add(corpo);
+      for (const x of [-0.11, 0.11]) { const a = malha(new T.BoxGeometry(0.07, 0.07, 0.34), lona); a.position.set(x * 0.9, 0.215, 0); coleteM.add(a); }
+      for (const x of [-0.11, 0, 0.11]) { const p = malha(new T.BoxGeometry(0.075, 0.09, 0.04), bolso); p.position.set(x * 0.85, -0.08, -0.19); coleteM.add(p); }
       por("Spine1", coleteM, 0, C.tronco, 0); coleteM.visible = false;
       capaceteM = new T.Group();
       const casco = malha(new T.SphereGeometry(time ? C.raio + 0.02 : 0.128, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), new T.MeshStandardMaterial({ color: time ? 0x2b2d24 : 0x3f4a3a, roughness: 0.5, metalness: 0.25 })); casco.scale.set(0.98, 1.05, 1.1); capaceteM.add(casco);
@@ -911,7 +911,7 @@
       por("Head", capaceteM, 0, C.cabeca + (time ? 0.03 : 0.085), time ? -0.01 : 0.01); capaceteM.visible = false;
     }
     const pivo = new T.Group(); pivo.position.set(0, 1.4, -0.02); modelo.add(pivo);          // a arma gira aqui, na altura do ombro
-    const lado = fonte.virado ? -1 : 1, arma = new T.Group(); arma.position.set(0.15 * lado, -0.1, -0.38); pivo.add(arma);   // lado: no modelo virado, a mão direita fica do outro lado
+    const lado = 1, arma = new T.Group(); arma.position.set(fonte === civilModelo ? 0.06 : 0.15, fonte === civilModelo ? -0.05 : -0.1, -0.38); pivo.add(arma);   // a arma fica à direita do corpo (no civil, mais ao centro, para as duas mãos)
     let placa = null;
     if (time) { placa = criarPlaca(nome, css); placa.position.y = 2.05; grupo.add(placa); }
     if (civil) grupo.scale.setScalar(civil.escala);
@@ -984,6 +984,7 @@
       b.grupo.updateMatrixWorld(true);
       alcancar(b, "Right", b.arma.localToWorld(b.semClipes ? new V3(MAO.x * b.lado, MAO.y, MAO.z) : new V3(0, -0.09, 0.07)), b.lado);
       if (longa) alcancar(b, "Left", b.arma.localToWorld(new V3(0, -0.04, -0.24)), -b.lado);
+      else if (b.semClipes && o.pose === "pistola" && !(ARMAS[b.armaChave] || {}).faca) alcancar(b, "Left", b.arma.localToWorld(new V3(-0.035, -0.075, 0.06)), -b.lado);      // pistola com as duas mãos
     } else if (o.vivo && o.pose === "preso") {          // pulsos amarrados (para trás no modelo civil, à frente nos outros)
       b.grupo.updateMatrixWorld(true);
       const z = b.semClipes ? 0.17 : -0.2;
