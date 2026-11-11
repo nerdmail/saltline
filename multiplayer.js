@@ -832,7 +832,7 @@
   // animação: a passada e os braços dele são movidos pelo código. A cor da roupa muda de um para outro.
   let soldado = null, civilModelo = null;
   const CORPO_CIVIL = { cabeca: 1.72, raio: 0.142, peito: 0.15, tronco: 1.29 };      // onde ficam a cabeça e o tronco do modelo civil (m)
-  const MAO = { x: 0, y: -0.035, z: 0.075 };      // como a mão do modelo civil pega a arma
+  const MAO = { x: 0, y: -0.035, z: 0.075, eixo: [1, 0, 0], fecha: 1.1, espelho: 1 };      // onde o punho pega a arma e como os dedos fecham      // como a mão do modelo civil pega a arma
   const VIRAR_CIVIL = true;        // true se, com as animações adaptadas, o modelo civil sair virado para trás
   async function carregarModelos() {
     try {
@@ -871,6 +871,7 @@
     const cor = time === "p" && fonte === soldado ? 0x4f6fe6 : 0xffffff, liso = {};
     if (fonte === civilModelo) {         // roupa de uma cor só: refém de macacão laranja; terrorista de camisa verde-escura e calça cáqui
       liso.Wolf3D_Outfit_Top = civil ? 0xf08a00 : 0x3d4a36; liso.Wolf3D_Outfit_Bottom = civil ? 0xf08a00 : 0xa8946a;
+      if (time === "t") liso.Wolf3D_Skin = 0x15161a;      // balaclava: a própria cabeça do modelo, toda preta (os olhos ficam de fora)
     }
     let visor = null, malha = null;
     cena.traverse(o => {
@@ -878,7 +879,7 @@
       if (!o.isMesh) return;
       o.userData.emprestado = true; o.frustumCulled = false; o.castShadow = true; malha = malha || o;
       if (/visor/i.test(o.name)) return void (visor = o);
-      if (fonte === civilModelo && /Headwear/i.test(o.material.name)) return void (o.visible = false);      // sem o chapéu
+      if (fonte === civilModelo && (/Headwear/i.test(o.material.name) || (time === "t" && /Beard|Teeth/i.test(o.material.name)))) return void (o.visible = false);      // sem o chapéu (e, de balaclava, sem barba)
       const lisa = liso[o.material.name], id = chave + o.material.uuid;
       if (lisa == null && cor === 0xffffff) return;
       if (!fonte.mats[id]) {
@@ -903,12 +904,7 @@
       const por = (osso, obj, x, y, z) => { obj.position.set(x, y, z); modelo.add(obj); obj.updateMatrixWorld(true); ossos[osso].attach(obj); return obj; };
       const malha = (geo, mat) => { const o = new T.Mesh(geo, mat); o.castShadow = true; return o; };
       if (time === "t") {
-        const preto = pano(0x17181a);
-        por("Head", malha(new T.SphereGeometry(C.raio, 20, 16), preto), 0, C.cabeca, -0.012).scale.set(0.98, 1.12, 1.1);
-        por("Head", malha(new T.CylinderGeometry(C.raio * 0.62, C.raio * 0.74, 0.13, 16), preto), 0, C.cabeca - C.raio * 0.95, 0.01);                  // gola da balaclava
-        por("Head", malha(new T.BoxGeometry(0.135, 0.034, 0.03), new T.MeshStandardMaterial({ color: 0xb98a6b, roughness: 0.6 })), 0, C.cabeca + 0.02, -C.raio * 1.07);
-        for (const x of [-0.034, 0.034]) por("Head", malha(new T.SphereGeometry(0.011, 8, 8), new T.MeshStandardMaterial({ color: 0x0c0c0c })), x, C.cabeca + 0.02, -C.raio * 1.17);
-        const lenco = por("Spine2", malha(new T.TorusGeometry(0.085, 0.035, 8, 18), pano(0x8a2f25)), 0, C.cabeca - C.raio - 0.085, 0.005); lenco.rotateX(Math.PI / 2);
+        const lenco = por("Spine2", malha(new T.TorusGeometry(0.085, 0.035, 8, 18), pano(0x8a2f25)), 0, 1.5, 0.005); lenco.rotateX(Math.PI / 2);
         const fita = por("Spine1", malha(new T.BoxGeometry(0.065, 0.56, 0.03), pano(0x3a2a1c)), 0, C.tronco, -C.peito); fita.rotateZ(0.62);                // bandoleira
         for (const k of [-0.15, -0.05, 0.05, 0.15]) { const b = por("Spine1", malha(new T.BoxGeometry(0.045, 0.07, 0.035), pano(0x5a4630)), k * 0.6, C.tronco - k * 0.85, -C.peito - 0.025); b.rotateZ(0.62); }
       }
@@ -919,9 +915,9 @@
       for (const x of [-0.11, 0, 0.11]) { const p = malha(new T.BoxGeometry(0.075, 0.09, 0.04), bolso); p.position.set(x * 0.85, -0.08, -0.19); coleteM.add(p); }
       por("Spine1", coleteM, 0, C.tronco, 0); coleteM.visible = false;
       capaceteM = new T.Group();
-      const casco = malha(new T.SphereGeometry(time ? C.raio + 0.02 : 0.128, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), new T.MeshStandardMaterial({ color: time ? 0x2b2d24 : 0x3f4a3a, roughness: 0.5, metalness: 0.25 })); casco.scale.set(0.98, 1.05, 1.1); capaceteM.add(casco);
-      for (const x of time ? [-(C.raio + 0.012), C.raio + 0.012] : [-0.118, 0.118]) { const j = malha(new T.BoxGeometry(0.012, 0.12, 0.03), pano(0x15171a)); j.position.set(x, -0.06, 0); capaceteM.add(j); }
-      por("Head", capaceteM, 0, C.cabeca + (time ? 0.03 : 0.085), time ? -0.01 : 0.01); capaceteM.visible = false;
+      const casco = malha(new T.SphereGeometry(0.128, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), new T.MeshStandardMaterial({ color: time ? 0x2b2d24 : 0x3f4a3a, roughness: 0.5, metalness: 0.25 })); casco.scale.set(0.98, 1.05, 1.1); capaceteM.add(casco);
+      for (const x of [-0.118, 0.118]) { const j = malha(new T.BoxGeometry(0.012, 0.12, 0.03), pano(0x15171a)); j.position.set(x, -0.06, 0); capaceteM.add(j); }
+      por("Head", capaceteM, 0, C.cabeca + 0.085, 0.01); capaceteM.visible = false;
     }
     const pivo = new T.Group(); pivo.position.set(0, 1.4, -0.02); modelo.add(pivo);          // a arma gira aqui, na altura do ombro
     const lado = 1, arma = new T.Group(); arma.position.set(fonte === civilModelo ? 0.06 : 0.15, fonte === civilModelo ? -0.05 : -0.1, -0.38); pivo.add(arma);   // a arma fica à direita do corpo (no civil, mais ao centro, para as duas mãos)
@@ -935,7 +931,7 @@
     for (const [n, f] of [["LeftUpLeg", "LeftLeg"], ["LeftLeg", "LeftFoot"], ["RightUpLeg", "RightLeg"], ["RightLeg", "RightFoot"], ["LeftArm", "LeftForeArm"], ["LeftForeArm", "LeftHand"], ["RightArm", "RightForeArm"], ["RightForeArm", "RightHand"]])
       if (ossos[n] && ossos[f]) repouso[n] = { q: qm.clone().multiply(ossos[n].getWorldQuaternion(new T.Quaternion())), dir: ossos[f].getWorldPosition(new V3()).sub(ossos[n].getWorldPosition(new V3())).applyQuaternion(qm).normalize() };
     const b = { grupo, modelo, mixer, acoes, repouso, semClipes: !fonte.clips.length, rig: fonte === civilModelo, ossos, pivo, arma, placa, capacete: capaceteM || visor || new T.Group(), colete: coleteM || new T.Group(), bone: new T.Group(), cordas: [], armaChave: null, lado,
-      maoRepouso: ossos.RightHand ? ossos.RightHand.quaternion.clone() : null,
+      dedos: Object.keys(ossos).filter(n => /Hand(Index|Middle|Ring|Pinky)[123]$/.test(n)).map(n => ({ o: ossos[n], q: ossos[n].quaternion.clone(), lado: n.startsWith("Right") ? "Right" : "Left" })),
       braco: dist("RightArm", "RightForeArm"), ante: dist("RightForeArm", "RightHand"), ult: new V3(), andar: 0, fase: 0 };
     if (civil) { armarBoneco(b, "p_pistola"); arma.visible = false; }
     return b;
@@ -953,6 +949,11 @@
     const o = b.ossos[nome]; if (!o || !b.repouso[nome]) return;
     apontarOsso(o, new V3(x, y, z).applyQuaternion(b.modelo.getWorldQuaternion(new G.THREE.Quaternion())), b, nome);
     o.updateWorldMatrix(false, true);
+  }
+  // fecha (k = 1) ou solta (k = 0) os dedos de uma mão do modelo civil, a partir do repouso de cada osso
+  function fecharDedos(b, lado, k) {
+    const q = new G.THREE.Quaternion().setFromAxisAngle(new V3(MAO.eixo[0], MAO.eixo[1], MAO.eixo[2]), MAO.fecha * k * (lado === "Left" ? MAO.espelho : 1));
+    for (const d of b.dedos) if (d.lado === lado) d.o.quaternion.copy(d.q).multiply(q);
   }
   // dobra ombro e cotovelo para a mão chegar num ponto do mundo (lado = "Right" ou "Left"; fora = para que lado o cotovelo abre)
   function alcancar(b, lado, alvo, fora) {
@@ -992,13 +993,15 @@
     m.position.z += ((deitado ? 0.8 : 0) - m.position.z) * k;
     m.scale.y += ((o.agachado && o.vivo && !deitado ? 0.7 : 1) - m.scale.y) * k;
     const longa = o.pose === "arma", comArma = o.vivo && (longa || o.pose === "pistola");
-    b.pivo.rotation.x = (o.pitch || 0) * 0.9 - m.rotation.x;
+    b.mira = (b.mira || 0) + (Math.max(-0.7, Math.min(0.7, o.pitch || 0)) - (b.mira || 0)) * k;      // a arma acompanha a mira aos poucos, sem apontar para o chão
+    b.pivo.rotation.x = b.mira * 0.9 - m.rotation.x;
     b.arma.visible = comArma;
     if (comArma) {
       b.grupo.updateMatrixWorld(true);
       alcancar(b, "Right", b.arma.localToWorld(b.rig ? new V3(MAO.x * b.lado, MAO.y, MAO.z) : new V3(0, -0.09, 0.07)), b.lado);
       if (longa) alcancar(b, "Left", b.arma.localToWorld(new V3(0, -0.04, -0.24)), -b.lado);
       else if (b.rig && o.pose === "pistola" && !(ARMAS[b.armaChave] || {}).faca) alcancar(b, "Left", b.arma.localToWorld(new V3(-0.035, -0.075, 0.06)), -b.lado);      // pistola com as duas mãos
+      if (b.rig) fecharDedos(b, "Right", 1); if (b.rig) fecharDedos(b, "Left", longa || !(ARMAS[b.armaChave] || {}).faca ? 1 : 0);
     } else if (o.vivo && o.pose === "preso") {          // pulsos amarrados (para trás no modelo civil, à frente nos outros)
       b.grupo.updateMatrixWorld(true);
       const z = b.rig ? 0.17 : -0.2;
@@ -2104,7 +2107,7 @@
       if (b.pisando && b.vel.y < 0) b.vel.y = 0;
       if (b.pos.y < -1) { b.pos.y = 0; b.vel.y = 0; }
       if (ia.visto && ia.alvo) { const p = posDe(ia.alvo); b.yaw = Math.atan2(-(p.x - b.pos.x), -(p.z - b.pos.z)); b.pitch = Math.atan2(p.y + meioDoCorpo(ia.alvo) - (b.pos.y + 1.4), ia.dist || 1); }
-      else if (wx || wz) { b.yaw = Math.atan2(-wx, -wz); b.pitch = 0; }
+      else { if (wx || wz) b.yaw = Math.atan2(-wx, -wz); b.pitch = 0; }
       ia.tiroT -= dt;
       if (ia.visto && ia.alvo && ia.alvo.vivo && ia.tiroT <= 0) {
         ia.tiroT = cfg.cadencia * (0.7 + Math.random() * 0.6);
@@ -2896,7 +2899,7 @@
     }
     const versaoEl = document.getElementById("versao");      // a versão some enquanto se joga (solo ou multiplayer)
     if (versaoEl) { G.events.on("game:state", ev => { versaoEl.hidden = !!ev && ev.state === "playing"; }); }
-    window.__mp = mp;
+    window.__mp = mp; window.__MAO = MAO;
   }
   const espera = setInterval(() => {
     if (window.__fatal) return clearInterval(espera);
