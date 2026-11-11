@@ -419,7 +419,7 @@
           if (!j || j.id === mp.meuId) continue;
           j.pos.set(d[1], d[2], d[3]); j.yaw = d[4]; j.pitch = d[5]; j.agachado = d[6] === 1; j.noChao = d[6] === 2; j.vivo = !!d[7]; j.armadura = d[8] | 0; j.arma = ARMAS[d[9]] ? d[9] : null;
         }
-        m.r.forEach((d, i) => { const r = mp.refens[i]; if (r) { r.pos.set(d[0], d[1], d[2]); r.estado = d[3]; r.lider = d[4]; r.prot = d[5] | 0; } });
+        m.r.forEach((d, i) => { const r = mp.refens[i]; if (r) { r.pos.set(d[0], d[1], d[2]); r.estado = d[3]; r.lider = d[4]; r.prot = d[5] | 0; r.post = d[6] | 0; } });
         sincronizarMarionetes(m.m);
         if (m.k && mp.carro.oc[0] !== mp.meuId) { mp.carro.alvo = new V3(m.k[0], 0, m.k[1]); mp.carro.alvoYaw = m.k[2]; }
         break;
@@ -454,7 +454,11 @@
         const r = mp.refens[m.i], quem = mp.jogadores.get(m.id), nome = quem ? esc(quem.nome) : "Alguém";
         if (!r) break;
         if (m.ev === "solto") { r.estado = 1; r.lider = m.id; G.hud.feed(`<b>${nome}</b> soltou um refém`); if (eu() && eu().time === "t") G.hud.warn("Estão levando um refém", 3); tocar("alert"); }
-        else if (m.ev === "salvo") { r.estado = 2; r.lider = null; G.hud.feed(`<b>${nome}</b> salvou um refém`); G.hud.warn("Refém a salvo", 3); tocar("relay_cut"); }
+        else if (m.ev === "salvo") {
+          r.estado = 2; r.lider = null; r.salvoEm = performance.now(); G.hud.feed(`<b>${nome}</b> salvou um refém`); tocar("relay_cut");
+          const salvos = mp.refens.filter(x => x.estado === 2 || x === r).length;
+          G.hud.warn(m.id === mp.meuId ? (salvos >= mp.refens.length ? "Parabéns! Você salvou todos os reféns" : "Parabéns! Você salvou um refém · " + salvos + " de " + mp.refens.length) : "Refém a salvo · " + salvos + " de " + mp.refens.length, 3.5);
+        }
         else if (m.ev === "largado") { r.estado = 0; r.lider = null; G.hud.feed("Um refém ficou para trás"); }
         else if (m.ev === "morto") { r.estado = 3; r.lider = null; G.hud.feed(`<b>${nome}</b> matou um refém`); }
         break;
@@ -596,7 +600,7 @@
         <li><b>Guindaste</b> A torre de escadas do lado sul sobe do chão até o alto: escada de gaiola, cinco lances e uma escada curta para o convés. A 13,5 m há passarelas em volta da torre.</li>
         <li><b>Lugares altos</b> Vários containers, o telhado do galpão e um mirante na torre do guindaste têm escada de mão; no alto do guindaste dá para andar pelo convés, por cima da viga até a ponta sobre a água, e subir no teto da casa de máquinas. Para descer: chegue perto da escada e aperte E. Lá no alto os drones não pegam você.</li>
         <li><b>Pulo</b> Pulando de frente para qualquer coisa até a altura de um container, você sobe nela. Mais alto que isso, só de escada.</li>
-        <li><b>Pichar</b> <kbd>P</kbd> abre seis desenhos: clique em um (ou aperte 1 a 6) para pichar parede, chão, teto ou container à sua frente.</li>
+        <li><b>Pichar</b> <kbd>P</kbd> abre seis desenhos: clique em um (ou aperte 1 a 6) para pichar. O desenho vai para onde a mira estava quando você apertou P (parede, chão, teto ou container, até 7 m).</li>
         <li><b>Pátio novo</b> O mapa cresceu para o sul: mais espaço aberto, poucos containers e muretas para se proteger.</li>
         <li><b>Saída secreta</b> Em cima da casinha dos reféns há um alçapão: cada vez ele leva a um lugar diferente do mapa.</li>
         <li><b>Armas</b> Todos nascem com a faca. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
@@ -606,6 +610,7 @@
         <li><b>Quem cai</b> Fica assistindo um jogador vivo até a rodada acabar. A barra de espaço troca de jogador.</li>
         <li><b>Placar</b> Segure Tab para ver quem está vivo, os abates e as vitórias de cada time.</li>
         <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q troca de arma (1 arma, 2 pistola, 3 faca) · 4 granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
+        <li><b>Reféns</b> Seguem você a um passo e meio: correm, pulam, abaixam e deitam junto. No ponto de resgate, comemoram.</li>
         <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura um tiro no tronco e some; o capacete segura um tiro na cabeça e some.</li>
         <li><b>Dano de tiro</b> No tronco tira 35; em perna ou pé, de 25 a 30; na cabeça, sem capacete, mata.</li>
         <li><b>Sala dos reféns</b> Tem 4 portas secretas numeradas (cada uma leva sempre ao mesmo lugar) e uma escada de mão até o duto de ar.</li>
@@ -1138,6 +1143,9 @@
       else if (b.rig && o.pose === "pistola" && !(ARMAS[b.armaChave] || {}).faca) alcancar(b, "Left", b.arma.localToWorld(new V3(-0.035, -0.075, 0.06)), -b.lado);      // pistola com as duas mãos
       else if (b.suporte && pst) alcancar(b, "Left", b.suporte.localToWorld(new V3(-0.16 * b.lado, -0.24, -0.2)), -b.lado);      // de faca: a outra mão fica em guarda, na frente do peito
       if (b.rig) fecharDedos(b, "Right", 1); if (b.rig) fecharDedos(b, "Left", 1);
+    } else if (o.vivo && o.pose === "festa") {          // salvo: pula de braços para cima
+      const t = performance.now() / 1000; b.grupo.position.y += Math.abs(Math.sin(t * 7)) * 0.22; b.grupo.updateMatrixWorld(true);
+      alcancar(b, "Right", m.localToWorld(new V3(0.32 * b.lado, 2 + Math.sin(t * 9) * 0.08, -0.05)), b.lado); alcancar(b, "Left", m.localToWorld(new V3(-0.32 * b.lado, 2 + Math.cos(t * 9) * 0.08, -0.05)), -b.lado);
     } else if (o.vivo && o.pose === "preso") {          // pulsos amarrados (para trás no modelo civil, à frente nos outros)
       b.grupo.updateMatrixWorld(true);
       const z = b.rig ? 0.17 : -0.2;
@@ -1387,8 +1395,9 @@
       const dx = r.cur.x - antes.x, dz = r.cur.z - antes.z, lim = 0.6 * dt;
       r.miraT = (r.miraT || 0) - dt;
       if (r.estado === 1 && r.miraT <= 0 && dx * dx + dz * dz > lim * lim) r.yaw = Math.atan2(-dx, -dz);   // só vira quando anda de verdade
-      r.boneco.grupo.visible = r.estado !== 2;
-      posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: false, pitch: 0, desdeTiro: (performance.now() - (r.tiroVisto || -1e6)) / 1000, pose: r.estado === 1 ? "pistola" : "preso", sentado: r.estado === 0 && !!r.civil.senta && !r.boneco.modelo, ajoelhado: r.estado === 0, deitado: noDuto(r.cur) });
+      const festa = r.estado === 2 && r.salvoEm && performance.now() - r.salvoEm < 4500;      // salvo: comemora uns segundos antes de sumir
+      r.boneco.grupo.visible = r.estado !== 2 || !!festa;
+      posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: r.estado === 1 && r.post === 1, noAr: r.estado === 1 && Math.abs(r.cur.y - antes.y) > 1.3 * dt && !escadaEm(r.cur, 0.9), pitch: 0, desdeTiro: (performance.now() - (r.tiroVisto || -1e6)) / 1000, pose: festa ? "festa" : r.estado === 1 ? "pistola" : "preso", sentado: r.estado === 0 && !!r.civil.senta && !r.boneco.modelo, ajoelhado: r.estado === 0, deitado: noDuto(r.cur) || (r.estado === 1 && r.post === 2) });
       r.boneco.arma.visible = r.estado === 1;                 // solto pelo policial, já armado
       r.boneco.colete.visible = !!(r.prot & 1) && r.estado !== 3; r.boneco.capacete.visible = !!(r.prot & 2) && r.estado !== 3;
     }
@@ -1677,10 +1686,14 @@
         if (!lider || !lider.vivo) { r.estado = 0; r.lider = null; r.casa.copy(r.pos); paraTodos({ t: "refem", i: r.i, ev: "largado" }); continue; }
         const lp = posDe(lider), dx = lp.x - r.pos.x, dz = lp.z - r.pos.z, d = Math.hypot(dx, dz);
         ancora = lp; folga = 2.6;
+        // imita o líder: pula quando ele pula, abaixa ou deita quando ele abaixa ou deita
+        { const euLider = lider.id === mp.meuId, vy = r.lpY != null ? (lp.y - r.lpY) / Math.max(dt, 0.001) : 0; r.lpY = lp.y;
+          if (vy > 3 && vy < 12 && r.noChao && d < 5 && !escadaEm(lp, 0.9) && !escadaEm(r.pos, 0.9) && !noDuto(r.pos)) { r.vel.y = 6.4; r.noChao = false; }
+          r.post = (euLider ? mp.deitado : lider.noChao) ? 2 : (euLider ? G.player.crouching : lider.agachado) ? 1 : 0; }
         r.atrasoT = d > 4.5 ? (r.atrasoT || 0) + dt : 0;        // ficou para trás (preso em alguma coisa)? depois de uns segundos reaparece junto do líder
         r.velLider = lider.rapidez || 0;
         if (d > 14 || r.atrasoT > 3.5) { r.pos.set(lp.x - dx / d * 1.2, lp.y, lp.z - dz / d * 1.2); r.trilha.length = 0; r.atrasoT = 0; r.vel.set(0, 0, 0); }   // o líder usou uma saída secreta, ou o refém ficou preso
-        else if (Math.hypot(d, lp.y - r.pos.y) <= 1.7) {   // chegou: fica parado a um passo de distância (também na escada e no duto), guardando os últimos passos do líder
+        else if (Math.hypot(d, lp.y - r.pos.y) <= 1.5) {   // chegou: fica parado a um passo de distância (também na escada e no duto), guardando os últimos passos do líder
           const ult = r.trilha[r.trilha.length - 1];
           if (!ult || ult.distanceTo(lp) > 0.5) r.trilha.push(lp.clone());
           while (r.trilha.length > 8) r.trilha.shift();
@@ -2895,14 +2908,15 @@
     }
     if (!pichoEl) return;
     pichoEl.hidden = !abre;
+    if (!abre && mp.pichoAlvo) { try { G.player.yaw = mp.pichoAlvo.yaw; G.player.pitch = mp.pichoAlvo.pitch; } catch {} }
     try { if (abre) G.input.exitLock(); else G.input.requestLock(); } catch {}
   }
   function pichar(i) {
-    abrirPichos(false);
-    const p = G.player; let h = null; try { h = G.physics.raycast(p.eye, p.forward, 4); } catch {}
-    if (!h || !h.normal) return G.hud.message("Chegue perto de uma parede, do chão ou de um container para pichar", 1.8);
-    mp.picharT = 2;
-    enviar({ t: "pichar", p: arr(h.point), n: arr(h.normal), d: i, g: +p.yaw.toFixed(2) });
+    const al = mp.pichoAlvo; abrirPichos(false);
+    if (!al) return;
+    try { G.player.yaw = al.yaw; G.player.pitch = al.pitch; } catch {}      // a mira volta para onde estava
+    mp.picharT = 2; mp.pichoAlvo = null;
+    enviar({ t: "pichar", p: al.p, n: al.n, d: i, g: al.g });
   }
   window.addEventListener("keydown", ev => {      // com a escolha aberta, as teclas não chegam ao jogo
     if (!pichoEl || pichoEl.hidden) return;
@@ -2923,6 +2937,9 @@
   function limparPichacoes() { if (pichacoes) while (pichacoes.children.length) pichacoes.remove(pichacoes.children[0]); }
   window.addEventListener("keydown", ev => {
     if (ev.code !== "KeyP" || ev.repeat || !emRodada() || mp.fase !== "valendo" || !G.player.alive || mp.picharT > 0 || (tela && !tela.hidden)) return;
+    const p = G.player; let h = null; try { h = G.physics.raycast(p.eye, p.forward, 7); } catch {}
+    if (!h || !h.normal) return G.hud.message("Mire numa parede, no chão, no teto ou num container (até 7 m) e aperte P", 2);
+    mp.pichoAlvo = { p: arr(h.point), n: arr(h.normal), g: +p.yaw.toFixed(2), yaw: p.yaw, pitch: p.pitch };
     abrirPichos(true);
   });
 
@@ -3186,13 +3203,14 @@
   }
   // todo quadro, antes da arma do jogo atualizar: decide se o gatilho passa, ajusta o pente e pega arma do chão
   function armasLocais(dt) {
-    const w = G.weapon, p = G.player, a = ARMAS[mp.arma], vale = p.alive && mp.fase === "valendo", gatilho = !!G.input.fire;
+    const w = G.weapon, p = G.player, vale = p.alive && mp.fase === "valendo", gatilho = !!G.input.fire;
     mp.cadT -= dt; mp.semPegarT -= dt; mp.passoT -= dt;
     if (mp.trocaPara) {                                    // troca de arma: a atual desce, troca lá embaixo e a nova sobe
       mp.trocaT += dt;
       if (mp.trocaT >= TROCA.desce && mp.arma !== mp.trocaPara) { mp.armaAntes = mp.arma; mp.arma = mp.trocaPara; tocar("reload_magin"); }
       if (mp.trocaT >= TROCA.desce + TROCA.sobe || !p.alive) { if (mp.arma !== mp.trocaPara && p.alive) { mp.armaAntes = mp.arma; mp.arma = mp.trocaPara; } mp.trocaPara = null; }
     }
+    const a = ARMAS[mp.arma];                              // só depois da troca: daqui para baixo vale a arma que está na mão agora
     let pode = false;
     if (a && !a.faca && vale && mp.cadT <= 0) {
       if (w.ammo === 0 || w.state === "reloading") mp.rajada = 0;
@@ -3209,7 +3227,7 @@
     mp.gatilhoAntes = gatilho; G.input.fire = pode;
     if (mp.arma !== mp.armaPente) {                      // trocou de arma: cada uma guarda a sua munição e o seu tempo de espera
       const antes = ARMAS[mp.armaPente], agora = performance.now() / 1000;
-      if (antes && !antes.faca) { mp.municao[mp.armaPente] = w.ammo; mp.prontaEm[mp.armaPente] = agora + Math.max(0, mp.cadT); }
+      if (antes && !antes.faca) { mp.municao[mp.armaPente] = Math.max(0, Math.min(antes.pente, w.ammo | 0)); mp.prontaEm[mp.armaPente] = agora + Math.max(0, mp.cadT); }
       mp.armaPente = mp.arma; mp.rajada = 0;
       try { w.reset(); } catch {}                         // cancela uma recarga que estivesse no meio (senão ela terminava na arma nova, com a munição errada)
       w.setVisible(!!a && !a.faca && p.alive); mp.armaVisivel = !!a && !a.faca && p.alive;
@@ -3217,6 +3235,8 @@
       mp.cadT = Math.max(0.3, (mp.prontaEm[mp.arma] || 0) - agora);
     }
     if (a && !a.faca) { w.magSize = a.pente; if (w.ammo > a.pente) w.ammo = a.pente; w.reserve = 150; try { if (typeof w.rpm === "number") w.rpm = Math.max(a.rpm, a.modo === "auto" ? 600 : a.rpm); } catch {} }
+    if (a && !a.faca && mp.recarregando && w.state !== "reloading" && mp.armaRecarga === mp.arma) w.ammo = a.pente;      // terminou de recarregar: pente cheio, sempre
+    mp.recarregando = !!a && !a.faca && w.state === "reloading"; mp.armaRecarga = mp.arma;
     if (a && !a.faca && vale && w.ammo <= 0 && w.state !== "reloading" && !mp.trocaPara) { try { w.reloadNow(); } catch {} }      // pente vazio: recarrega sozinho
     if (!mp.linhaMunicao) mp.linhaMunicao = document.querySelector(".h-ammo-row");
     if (mp.linhaMunicao) mp.linhaMunicao.style.visibility = a && a.faca ? "hidden" : "";                                         // de faca não há munição para mostrar       // munição infinita: R sempre recarrega
@@ -3467,7 +3487,7 @@
           k: mp.carro.oc[0] === mp.meuId && mp.carro.pos ? [+mp.carro.pos.x.toFixed(2), +mp.carro.pos.z.toFixed(2), +mp.carro.yaw.toFixed(3)] : undefined });
         if (mp.anfitriao) paraTodos({ t: "estados", tempo: +mp.tempo.toFixed(1),
           j: [...mp.jogadores.values()].map(x => [x.id, ...arr(x.pos), +x.yaw.toFixed(3), +x.pitch.toFixed(3), x.noChao ? 2 : x.agachado ? 1 : 0, x.vivo ? 1 : 0, x.armadura | 0, x.id === mp.meuId ? mp.arma || "" : x.arma || ""]),
-          r: mp.refens.map(r => [...arr(r.pos), r.estado, r.lider, r.prot | 0]),
+          r: mp.refens.map(r => [...arr(r.pos), r.estado, r.lider, r.prot | 0, r.estado === 1 ? r.post | 0 : 0]),
           k: mp.carro.pos ? [+mp.carro.pos.x.toFixed(2), +mp.carro.pos.z.toFixed(2), +mp.carro.yaw.toFixed(3)] : null,
           m: G.enemies.list.filter(e => e.alive).map(e => [e.id, e.type === "hound" ? 1 : 0, ...arr(e.pos), +(e.yaw || 0).toFixed(2)]) }, mp.meuId);
       }
