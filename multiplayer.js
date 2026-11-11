@@ -71,8 +71,8 @@
   // d = distância do eixo até a escada; curta = não passa do topo (termina dentro do duto)
   const ESCADAS = [
     { x: SALA.x1 - 0.45, z: -24.28, y0: 2.6,  y1: 5.16, nx: 1,  nz: 0, d: 0.33 },               // da sala para o teto dela e a boca do duto
-    { x: 3,      z: -24.28, y0: 5.1,  y1: 8.45, nx: 1,  nz: 0, d: 0.42 },               // do duto para o telhado (lado norte)
-    { x: 0.15,   z: -14.2,  y0: 5.1,  y1: 8.45, nx: 0,  nz: 1, d: 0.42 },               // do duto para o telhado (lado sul)
+    { x: 3,      z: -24.28, y0: 5.1,  y1: 8.85, nx: 1,  nz: 0, d: 0.42 },               // do duto para o telhado (lado norte)
+    { x: 0.15,   z: -14.2,  y0: 5.1,  y1: 8.85, nx: 0,  nz: 1, d: 0.42 },               // do duto para o telhado (lado sul)
     { x: 3,      z: -19.2,  y0: 0.03, y1: 5.16, nx: 1,  nz: 0, d: 0.42, curta: true },  // do duto para o chão do galpão (leste)
     { x: -13,    z: -16.5,  y0: 0.03, y1: 5.16, nx: -1, nz: 0, d: 0.42, curta: true },  // do duto para o chão do galpão (oeste)
     { x: -16.75, z: -19.5,  y0: 0,    y1: 9.7,  nx: 1,  nz: 0, d: 0.4 },                // do telhado para o chão, por fora (oeste)
@@ -1888,8 +1888,12 @@
     // tiro passa) deixam atravessar o telhado inteiro andando, de um lado ao outro.
     for (const [z, baixo, lado] of [[-25.88, 7.71, -1], [-23.75, 8.33, -1], [-21.63, 8.96, -1], [-13.13, 7.71, 1], [-15.25, 8.33, 1], [-17.38, 8.96, 1]])
       for (const [k, alt] of [[1, 0.21], [0, 0.42]]) {
-        const za = z + lado * k * 0.45, zb = z + lado * (k + 1) * 0.45;
-        fis.addBox([-16.3, baixo - 0.05, Math.min(za, zb)], [12.3, baixo + alt, Math.max(za, zb)], { surface: "metal", playerOnly: true });
+        const za = Math.min(z + lado * k * 0.45, z + lado * (k + 1) * 0.45), zb = Math.max(z + lado * k * 0.45, z + lado * (k + 1) * 0.45);
+        // os degrauzinhos não podem tampar a saída dos poços do duto: em volta de cada poço fica um vão
+        let cortes = [-16.3, 12.3];
+        for (const [cx, cz] of [[D.xe, D.zn], [0.15, D.zs]]) if (zb > cz - 0.75 && za < cz + 0.75) cortes = cortes.concat([cx - 0.8, cx + 0.8]);
+        cortes.sort((p, q) => p - q);
+        for (let i = 0; i + 1 < cortes.length; i += 2) fis.addBox([cortes[i], baixo - 0.05, za], [cortes[i + 1], baixo + alt, zb], { surface: "metal", playerOnly: true });
       }
     // mirante na torre do guindaste: plataforma de grade a 12 m de altura, presa à perna sudoeste, com escada de mão e guarda-corpo
     const M = { x0: 15.5, x1: 17.9, z0: 3.6, z1: 7.2, y: 12 };
