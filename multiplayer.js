@@ -76,6 +76,7 @@
     { x: 3,      z: -19.2,  y0: 0.03, y1: 5.16, nx: 1,  nz: 0, d: 0.42, curta: true },  // do duto para o chão do galpão (leste)
     { x: -13,    z: -16.5,  y0: 0.03, y1: 5.16, nx: -1, nz: 0, d: 0.42, curta: true },  // do duto para o chão do galpão (oeste)
     { x: -16.75, z: -19.5,  y0: 0,    y1: 9.7,  nx: 1,  nz: 0, d: 0.4 },                // do telhado para o chão, por fora (oeste)
+    { x: 6.13,   z: -16.3,  y0: 0.03, y1: 9.45, nx: 1,  nz: 0, d: 0.33, curta: true },  // por dentro do galpão: do chão ao telhado, por uma das aberturas dele
     { x: 2,      z: -28.8,  y0: 0,    y1: 7.83, nx: 0,  nz: 1, d: 0.4 },                // do telhado para o chão, por fora (lado norte, junto ao alambrado; o leste tem um portão)
   ];
   // onde se anda deitado: [x de, z de, x até, z até, y de, y até] (as bocas e os buracos das escadas entram com folga)
@@ -113,6 +114,8 @@
   const RESGATES = [[-32, 6, "Portão oeste"], [-32, 20, "Portão sudoeste"], [-32, -8, "Portão noroeste"], [-26.6, -15, "Guarita noroeste"],
     [-16, 22, "Pátio sudoeste"], [-7.8, 21.4, "Pátio sul"], [6, 26, "Cerca sul"], [14.2, 16.4, "Pátio sudeste"], [-19, -1.4, "Entrada do pátio"], [-10.3, 12.5, "Centro do pátio"]];
   const RAIO_RESGATE = 4;
+  const SECRETA = [-14.6, -26.7];      // alçapão em cima da casinha dos reféns: cada vez que alguém entra, sai num lugar sorteado do mapa
+  const ALTO = 3.2;                    // quem está acima disso (em cima de dois containers, do galpão, do guindaste) os drones não pegam
   const PASSAGENS = [            // portas secretas nas paredes da sala: "de" é onde se para em frente à porta, "para" é onde ela sai
     { de: [-15.0, -25.0], parede: "oeste", para: [-16, 26],      nome: "Pátio sudoeste" },
     { de: [-15.0, -26.7], parede: "oeste", para: [14.2, 16.4],   nome: "Pátio sudeste" },
@@ -158,6 +161,7 @@
     jogadores: new Map(),     // id -> { id, nome, time, vivo, pos, cur, yaw, pitch, agachado, boneco, alvo }
     refens: [],               // { i, pos, cur, vel, estado, lider, hp, jaSolto, caminho, caminhoT, boneco }
     dificuldade: "medio",
+    rodadasTotal: 5,           // quantas rodadas tem a partida (o anfitrião escolhe na sala de espera)
     resgate: null,            // anfitrião: ponto sorteado da rodada
     resgateVisto: null,       // Policiais: ponto revelado nesta rodada
     fase: "lobby",            // lobby | preparo | valendo | fim
@@ -283,7 +287,7 @@
         if (id !== mp.meuId) { j.pos.fromArray(m.p); j.yaw = m.y; j.pitch = m.x; j.agachado = m.c === 1; }
         j.noChao = m.c === 2;                      // deitado por conta própria (tecla Z)
         if (m.k && mp.carro.oc[0] === id && mp.carro.pos) { mp.carro.pos.set(m.k[0], 0, m.k[1]); mp.carro.yaw = m.k[2]; }      // quem dirige diz onde o carro está
-        j.vivo = !!m.v; j.armadura = m.a | 0; if (id !== mp.meuId) j.arma = ARMAS[m.w] ? m.w : null;
+        j.vivo = !!m.v; j.armadura = m.a | 0; j.mirando = !!m.s; if (id !== mp.meuId) j.arma = ARMAS[m.w] ? m.w : null;
         break;
       case "tiro":
         j.tiroEm = performance.now() / 1000;      // os bots ouvem
@@ -378,7 +382,7 @@
     if (mp.ativo) { paraTodos({ t: "feed", html: `<b>${esc(j.nome)}</b> saiu da sala` }); mandarLobby(); }
   }
   function mandarLobby() {
-    paraTodos({ t: "lobby", fase: mp.fase, placar: mp.placar, rodada: mp.rodada, dificuldade: mp.dificuldade,
+    paraTodos({ t: "lobby", fase: mp.fase, placar: mp.placar, rodada: mp.rodada, dificuldade: mp.dificuldade, rodadas: mp.rodadasTotal,
       jogadores: [...mp.jogadores.values()].map(j => ({ id: j.id, nome: j.nome, time: j.time, bot: j.bot ? 1 : 0 })) });
   }
 
@@ -397,7 +401,7 @@
           j.nome = d.nome; j.time = d.time; if (!mp.anfitriao) j.bot = !!d.bot;
         }
         for (const [id, j] of mp.jogadores) if (!vistos.has(id)) { removerBoneco(j); mp.jogadores.delete(id); }
-        mp.placar = m.placar; mp.rodada = m.rodada; mp.dificuldade = m.dificuldade;
+        mp.placar = m.placar; mp.rodada = m.rodada; mp.dificuldade = m.dificuldade; if (m.rodadas) mp.rodadasTotal = m.rodadas;
         if (!mp.anfitriao && mp.fase === "lobby") mp.faseAnfitriao = m.fase;
         desenharLobby();
         break;
@@ -528,7 +532,9 @@
         break;
       case "fimPartida": {
         const perdedor = m.vencedor === "p" ? "t" : "p";
-        mp.resultado = TIMES[m.vencedor].nome + " venceram a partida por " + m.placar[m.vencedor] + " a " + m.placar[perdedor];
+        mp.resultado = (m.vencedor === "e" ? "Partida empatada em " + m.placar.p + " a " + m.placar.t
+          : "Vencedor: " + TIMES[m.vencedor].nome + " · " + m.placar[m.vencedor] + " a " + m.placar[perdedor])
+          + (m.craque ? " · Destaque: " + m.craque[0] + " (" + m.craque[1] + " abates)" : "");
         sairDaPartida(); mp.faseAnfitriao = "lobby"; mp.placar = { p: 0, t: 0 }; mp.rodada = 0;
         for (const j of mp.jogadores.values()) { j.abates = 0; j.abatesRodada = 0; j.mortes = 0; }
         entrarNoLobby();
@@ -582,17 +588,19 @@
         <li><b>Fim da rodada</b> Todos os reféns salvos, um refém morto, um time inteiro caído ou o tempo esgotado.</li>
         <li><b>Sniper</b> Um tiro a cada 3 segundos, zoom de 5x no botão direito. Mata jogador com um tiro, com ou sem colete; refém precisa de dois.</li>
         <li><b>Pistola reserva</b> Quem está só de faca ou de sniper também leva uma pistola de 9 tiros: aperte 2 (ou Q). De pistola na mão os passos fazem barulho; de faca, não.</li>
-        <li><b>Lugares altos</b> Vários containers, o telhado do galpão e um mirante na torre do guindaste têm escada de mão. Para descer: olhe para baixo e aperte W.</li>
+        <li><b>Lugares altos</b> Vários containers, o telhado do galpão e um mirante na torre do guindaste têm escada de mão; no alto do guindaste há um convés grande. Para descer: chegue perto da escada e aperte E. Lá no alto os drones não pegam você.</li>
+        <li><b>Pulo</b> Pulando de frente para um caixote ou mureta até a sua altura, você sobe nele.</li>
+        <li><b>Saída secreta</b> Em cima da casinha dos reféns há um alçapão: cada vez ele leva a um lugar diferente do mapa.</li>
         <li><b>Armas</b> Todos nascem com a faca. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
         <li><b>Explosivos</b> Pegue passando por cima. 4 joga a granada; B arma a bomba no chão onde você está; V arma a bomba-relógio (T muda o tempo). Qualquer um desarma segurando E perto dela.</li>
-        <li><b>Modo furtivo</b> Com a faca na mão ninguém ouve seus passos, nem os bots. Eles só veem o que está à frente deles; de arma na mão, ouvem você andando por perto e viram.</li>
+        <li><b>Modo furtivo</b> Com a faca na mão ninguém ouve seus passos, nem os bots. Eles só veem o que está à frente deles; de arma na mão, ouvem você andando por perto e viram. Drones e cães só pegam quem está de faca se derem de cara com ele. Mirando com a sniper, máquinas e bots não veem você.</li>
         <li><b>Bots</b> Quando a partida começa, cada time é completado com bots até ficar com 5 (no máximo 10 na partida). O nome deles começa com "Bot". Eles só combatem, não mexem nos reféns, e ficam mais difíceis conforme a dificuldade da sala.</li>
         <li><b>Quem cai</b> Fica assistindo um jogador vivo até a rodada acabar. A barra de espaço troca de jogador.</li>
         <li><b>Placar</b> Segure Tab para ver quem está vivo, os abates e as vitórias de cada time.</li>
         <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q troca de arma (1 arma, 2 pistola, 3 faca) · 4 granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
         <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura metade de um tiro no corpo; o capacete salva de um tiro na cabeça. Cada um aguenta um tiro só.</li>
         <li><b>Sala dos reféns</b> Tem 4 portas secretas numeradas (cada uma leva sempre ao mesmo lugar) e uma escada de mão até o duto de ar.</li>
-        <li><b>Duto e telhado</b> No duto só se rasteja; ele leva a escadas para o chão e para o telhado. Na escada: W sobe; olhando para baixo, W desce.</li>
+        <li><b>Duto e telhado</b> No duto só se rasteja; ele leva a escadas para o chão e para o telhado. Dentro dele não dá para virar: S anda de ré. Na escada: W sobe, S desce. No telhado, as entradas têm moldura listrada e uma luz; uma delas é uma escada que desce por dentro do galpão.</li>
         <li><b>Queda</b> Cair de muito alto tira metade da vida.</li>
         <li><b>Reféns</b> Só morrem com tiro na cabeça. Soltos, andam armados e atiram nos Terroristas.</li>
       </ul>`;
@@ -626,7 +634,10 @@
       <div class="mp-dif"><span>Dificuldade</span>${mp.anfitriao
         ? `<div class="seg">${Object.entries(DIFICULDADES).map(([k, v]) => `<button data-mp="dif-${k}" aria-pressed="${k === mp.dificuldade}">${v.nome}</button>`).join("")}</div>`
         : `<b>${d.nome}</b>`}</div>
-      <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times. Vence quem fizer ${CFG.rodadasParaVencer} rodadas.</p>
+      <div class="mp-dif"><span>Rodadas</span>${mp.anfitriao
+        ? `<div class="seg">${[3, 4, 5, 7, 10].map(n => `<button data-mp="rod-${n}" aria-pressed="${n === mp.rodadasTotal}">${n}</button>`).join("")}</div>`
+        : `<b>${mp.rodadasTotal}</b>`}</div>
+      <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times. Partida de ${mp.rodadasTotal} rodadas: ganha o time que vencer mais.</p>
       <div class="mp-acoes mp-acoes-dicas"><button class="btn small" data-mp="dicas">Ver dicas</button></div>
       <div class="mp-acoes">
         ${mp.anfitriao ? `<button class="btn primary" data-mp="comecar">Começar partida</button>`
@@ -648,6 +659,7 @@
     }
     else if (a.startsWith("time-")) enviar({ t: "time", time: a.slice(5) });
     else if (a.startsWith("dif-") && mp.anfitriao) { mp.dificuldade = a.slice(4); mandarLobby(); }
+    else if (a.startsWith("rod-") && mp.anfitriao) { mp.rodadasTotal = +a.slice(4) || 5; mandarLobby(); }
     else if (a === "comecar") { mp.resultado = null; mp.placar = { p: 0, t: 0 }; mp.rodada = 0; novaRodada(); }
     else if (a === "nome") { await pedirPerfil(true); location.reload(); }
   });
@@ -737,8 +749,14 @@
     } else if (mp.fase === "fim") {
       mp.fimT -= dt;
       if (mp.fimT <= 0) {
-        const v = mp.placar.p >= CFG.rodadasParaVencer ? "p" : mp.placar.t >= CFG.rodadasParaVencer ? "t" : null;
-        if (v) { try { G.enemies.clear(); } catch {} paraTodos({ t: "fimPartida", vencedor: v, placar: mp.placar }); }
+        // a partida acaba na última rodada, ou antes, quando um time já não pode mais ser alcançado
+        const pl = mp.placar, resto = mp.rodadasTotal - mp.rodada, acabou = resto <= 0 || Math.abs(pl.p - pl.t) > resto;
+        const v = !acabou ? null : pl.p > pl.t ? "p" : pl.t > pl.p ? "t" : "e";
+        if (v) {
+          const melhor = [...mp.jogadores.values()].sort((a, b) => (b.abates || 0) - (a.abates || 0))[0];
+          try { G.enemies.clear(); } catch {}
+          paraTodos({ t: "fimPartida", vencedor: v, placar: mp.placar, craque: melhor && melhor.abates ? [melhor.nome, melhor.abates] : null });
+        }
         else novaRodada();
       }
     }
@@ -841,7 +859,41 @@
       const [{ GLTFLoader }, SU] = await Promise.all([import("./lib/GLTFLoader.js"), import("./lib/SkeletonUtils.js")]);
       const carregador = new GLTFLoader(), malhaDe = cena => { let m = null; cena.traverse(o => { if (o.isSkinnedMesh && !m) m = o; }); return m; };
       const g = await carregador.loadAsync("./modelos/soldado.glb");
-      soldado = { cena: g.scene, clips: g.animations.filter(c => c.name !== "TPose"), clonar: SU.clone, mats: {} };
+      // modelos/animacoes.json traz, além de parado/andar/correr, as posturas: rastejando, deitado, agachado (parado e andando),
+      // no ar e caindo morto. Cada rotação lá é em relação a um repouso neutro (em T); aqui ela é somada ao repouso de cada osso
+      // do modelo, e a altura do quadril é passada para a escala e a orientação dele.
+      const T = G.THREE; let dados = null;
+      try { dados = await (await fetch("./modelos/animacoes.json")).json(); } catch (e) { console.warn("[mp] modelos/animacoes.json não carregou; os bonecos ficam sem as posturas", e); }
+      const clipesPara = (cena, prefixo, repousoDe, quais) => {
+        const ossos = {}, q = new T.Quaternion(), lista = []; cena.updateMatrixWorld(true);
+        cena.traverse(o => { if (o.isBone) ossos[o.name] = o; });
+        const hips = ossos[prefixo + "Hips"], L = ossos[prefixo + "LeftArm"], R = ossos[prefixo + "RightArm"];
+        if (!dados || !hips || !L || !R) return lista;
+        const ex = L.getWorldPosition(new V3()).sub(R.getWorldPosition(new V3())).setY(0).normalize(), ez = new V3().crossVectors(ex, new V3(0, 1, 0));
+        const k = hips.getWorldPosition(new V3()).y / 1.0427, pq = hips.parent.getWorldQuaternion(new T.Quaternion()).invert(), ps = hips.parent.getWorldScale(new V3()).y || 1, p0 = hips.position.clone();
+        for (const c of dados.clips) {
+          if (!quais(c)) continue;
+          const faixas = c.faixas.filter(f => ossos[prefixo + f.o]).map(f => {
+            const r = (repousoDe && repousoDe[prefixo + f.o]) || ossos[prefixo + f.o].quaternion, v = f.v.slice();
+            for (let i = 0; i < v.length; i += 4) q.fromArray(v, i).premultiply(r).toArray(v, i);
+            return new T.QuaternionKeyframeTrack(prefixo + f.o + ".quaternion", f.t, v);
+          });
+          if (c.h) {
+            const v = [];
+            for (let i = 0; i < c.h.v.length; i += 3) {
+              const d = new V3().addScaledVector(ex, c.h.v[i] * k).addScaledVector(ez, c.h.v[i + 2] * k); d.y = c.h.v[i + 1] * k;
+              d.applyQuaternion(pq).divideScalar(ps).add(p0); v.push(d.x, d.y, d.z);
+            }
+            faixas.push(new T.VectorKeyframeTrack(prefixo + "Hips.position", c.h.t, v));
+          }
+          const clip = new T.AnimationClip(c.nome, c.dur, faixas); clip.uma = !!c.uma; lista.push(clip);
+        }
+        return lista;
+      };
+      const repS = {}, tpose = g.animations.find(c => c.name === "TPose");
+      if (tpose) for (const t of tpose.tracks) if (t.name.endsWith(".quaternion")) repS[t.name.slice(0, -11)] = new T.Quaternion().fromArray(t.values, 0);
+      let posturasS = []; try { posturasS = clipesPara(g.scene, "mixamorig", repS, c => !!c.h); } catch (e) { console.warn("[mp] posturas do soldado", e); }
+      soldado = { cena: g.scene, clips: g.animations.filter(c => c.name !== "TPose").concat(posturasS), clonar: SU.clone, mats: {} };
       for (const j of mp.jogadores.values()) removerBoneco(j);          // quem já tinha o boneco antigo troca pelo novo
       try {
         const c = await carregador.loadAsync("./modelos/civil2.glb");
@@ -850,13 +902,7 @@
         // modelo com os mesmos ossos). Lá cada rotação é em relação a um repouso neutro; aqui ela é somada ao repouso de cada osso.
         let clips = [];
         try {
-          const T = G.THREE, dados = await (await fetch("./modelos/animacoes.json")).json(), repouso = {}, q = new T.Quaternion();
-          c.scene.traverse(o => { if (o.isBone) repouso[o.name] = o.quaternion.clone(); });
-          clips = dados.clips.map(k => new T.AnimationClip(k.nome, k.dur, k.faixas.filter(f => repouso[f.o]).map(f => {
-            const v = f.v.slice();
-            for (let i = 0; i < v.length; i += 4) q.fromArray(v, i).premultiply(repouso[f.o]).toArray(v, i);
-            return new T.QuaternionKeyframeTrack(f.o + ".quaternion", f.t, v);
-          })));
+          clips = clipesPara(c.scene, "", null, () => true);
           if (!clips.find(k => k.name === "Idle") || !clips.find(k => k.name === "Walk") || !clips.find(k => k.name === "Run")) clips = [];
         } catch (e) { console.warn("[mp] as animações do modelo civil não carregaram; pernas e braços ficam movidos pelo código", e); clips = []; }
         if (CARRO.ligado) try { const k = await carregador.loadAsync("./modelos/carro.glb"); montarCarro(k); } catch (e) { console.warn("[mp] o modelo do carro não carregou; fica o carro feito por código", e); }
@@ -893,7 +939,7 @@
     if (fonte.virado) cena.rotation.y = Math.PI;
     modelo.add(cena); grupo.add(modelo);
     const mixer = new T.AnimationMixer(fonte.naMalha ? malha : cena), acoes = {};
-    for (const c of fonte.clips) { const a = acoes[c.name] = mixer.clipAction(c); a.play(); a.setEffectiveWeight(c.name === "Idle" ? 1 : 0); }
+    for (const c of fonte.clips) { const a = acoes[c.name] = mixer.clipAction(c); if (c.uma) { a.setLoop(T.LoopOnce, 1); a.clampWhenFinished = true; } a.play(); a.setEffectiveWeight(c.name === "Idle" ? 1 : 0); }
     if (time) {
       const mFaixa = new T.MeshStandardMaterial({ color: ROUPAS[time].faixa, emissive: ROUPAS[time].faixa, emissiveIntensity: 0.7, roughness: 0.8 });
       const u = fonte === soldado ? 100 : 1, raio = fonte === soldado ? 0.072 : 0.058;      // os ossos do soldado medem em centímetros; os do civil, em metros
@@ -937,7 +983,7 @@
     const repouso = {}, qm = modelo.getWorldQuaternion(new T.Quaternion()).invert();
     for (const [n, f] of [["LeftUpLeg", "LeftLeg"], ["LeftLeg", "LeftFoot"], ["RightUpLeg", "RightLeg"], ["RightLeg", "RightFoot"], ["LeftArm", "LeftForeArm"], ["LeftForeArm", "LeftHand"], ["RightArm", "RightForeArm"], ["RightForeArm", "RightHand"]])
       if (ossos[n] && ossos[f]) repouso[n] = { q: qm.clone().multiply(ossos[n].getWorldQuaternion(new T.Quaternion())), dir: ossos[f].getWorldPosition(new V3()).sub(ossos[n].getWorldPosition(new V3())).applyQuaternion(qm).normalize() };
-    const b = { grupo, modelo, mixer, acoes, repouso, semClipes: !fonte.clips.length, rig: fonte === civilModelo, ossos, pivo, arma, placa, capacete: capaceteM || visor || new T.Group(), colete: coleteM || new T.Group(), bone: new T.Group(), cordas: [], armaChave: null, lado,
+    const b = { grupo, modelo, mixer, acoes, repouso, semClipes: !fonte.clips.length, posturas: !!acoes.Prone && !!acoes.CrouchIdle, suporte, suporteQ: suporte.quaternion.clone(), rig: fonte === civilModelo, ossos, pivo, arma, placa, capacete: capaceteM || visor || new T.Group(), colete: coleteM || new T.Group(), bone: new T.Group(), cordas: [], armaChave: null, lado,
       dedos: Object.keys(ossos).filter(n => /Hand(Index|Middle|Ring|Pinky)[123]$/.test(n)).map(n => ({ o: ossos[n], q: ossos[n].quaternion.clone(), lado: n.startsWith("Right") ? "Right" : "Left" })),
       braco: dist("RightArm", "RightForeArm"), ante: dist("RightForeArm", "RightHand"), ult: new V3(), andar: 0, fase: 0 };
     if (civil) { armarBoneco(b, "p_pistola"); arma.visible = false; }
@@ -977,7 +1023,14 @@
     b.ult.copy(cur); b.grupo.position.copy(cur);
     let d = yaw - b.grupo.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); b.grupo.rotation.y += d * k;
     b.andar += (Math.min(vel, 9) - b.andar) * Math.min(1, 10 * dt);
-    const v = b.andar, alvo = !o.vivo ? "Idle" : v > 2.6 ? "Run" : v > 0.35 ? "Walk" : "Idle";
+    const v = b.andar, pst = !!b.posturas && !b.semClipes;
+    let alvo = !o.vivo ? (pst ? "Death" : "Idle") : v > 2.6 ? "Run" : v > 0.35 ? "Walk" : "Idle";
+    if (pst && o.vivo && !ajoelhado) {            // posturas com animação própria: rastejando, deitado, no ar, agachado
+      if (deitado) alvo = v > 0.3 ? "Prone" : "ProneIdle";
+      else if (o.noAr) alvo = "Air";
+      else if (o.agachado) alvo = v > 0.35 ? "CrouchWalk" : "CrouchIdle";
+    }
+    const postura = alvo !== "Idle" && alvo !== "Walk" && alvo !== "Run";
     if (b.semClipes) {                // passada e braços pelo código
       b.grupo.updateMatrixWorld(true);
       b.fase += Math.min(v, 6) * dt * 2.6;
@@ -992,19 +1045,38 @@
     } else {
       for (const n in b.acoes) { const a = b.acoes[n], w = a.getEffectiveWeight(); a.setEffectiveWeight(w + ((n === alvo ? 1 : 0) - w) * Math.min(1, 8 * dt)); }
       b.acoes.Walk.timeScale = Math.max(0.6, Math.min(1.8, v / 1.5)); b.acoes.Run.timeScale = Math.max(0.7, Math.min(1.7, v / 4.2));
-      if (o.vivo) b.mixer.update(dt);
+      if (pst) {
+        b.acoes.Prone.timeScale = Math.max(0.7, Math.min(2.4, v / 0.8)); b.acoes.CrouchWalk.timeScale = Math.max(0.6, Math.min(1.8, v / 1.65));
+        if (!o.vivo && !b.caiu) { b.caiu = true; b.acoes.Death.reset().play(); } else if (o.vivo) b.caiu = false;      // cai uma vez e fica no chão
+      }
+      if (o.vivo || pst) b.mixer.update(dt);
       if (ajoelhado) { b.grupo.updateMatrixWorld(true); for (const L of ["Left", "Right"]) { apontarLocal(b, L + "UpLeg", 0, -1, -0.1); apontarLocal(b, L + "Leg", 0, -0.12, 1); } }      // de joelhos por cima da animação
     }
-    m.rotation.x += ((!o.vivo || deitado ? -Math.PI / 2 : 0) - m.rotation.x) * k;          // caído ou rastejando: de bruços
-    m.position.y += ((!o.vivo ? 0.18 : deitado ? 0.22 : ajoelhado ? -0.4 : 0) - m.position.y) * k;
-    m.position.z += ((deitado ? 0.8 : 0) - m.position.z) * k;
-    m.scale.y += ((o.agachado && o.vivo && !deitado ? 0.7 : 1) - m.scale.y) * k;
+    // sem as animações de postura, o modelo inteiro é deitado ou achatado; com elas, a própria animação faz isso
+    m.rotation.x += ((!pst && (!o.vivo || deitado) ? -Math.PI / 2 : 0) - m.rotation.x) * k;          // caído ou rastejando: de bruços
+    m.position.y += ((ajoelhado && o.vivo && !deitado ? -0.4 : pst ? 0 : !o.vivo ? 0.18 : deitado ? 0.22 : 0) - m.position.y) * k;
+    m.position.z += ((!pst && deitado ? 0.8 : 0) - m.position.z) * k;
+    m.scale.y += ((!pst && o.agachado && o.vivo && !deitado ? 0.7 : 1) - m.scale.y) * k;
+    b.fixa = (b.fixa || 0) + ((pst && postura ? 1 : 0) - (b.fixa || 0)) * Math.min(1, 8 * dt);
+    b.rente = (b.rente || 0) + ((pst && deitado && o.vivo ? 1 : 0) - (b.rente || 0)) * Math.min(1, 8 * dt);
     const longa = o.pose === "arma", comArma = o.vivo && (longa || o.pose === "pistola");
     b.mira = (b.mira || 0) + (Math.max(-0.7, Math.min(0.7, o.pitch || 0)) - (b.mira || 0)) * k;      // a arma acompanha a mira aos poucos, sem apontar para o chão
-    b.pivo.rotation.x = b.mira * 0.9 - m.rotation.x;
+    // correndo, a arma longa vai baixa, cruzada no corpo; ao atirar sobe na hora e dá um coice; andando, balança de leve
+    const desde = o.desdeTiro == null ? 9 : o.desdeTiro, coice = Math.max(0, 1 - desde / 0.13);
+    b.baixa = (b.baixa || 0) + ((comArma && longa && !deitado && desde > 0.8 && v > 5 ? 1 : 0) - (b.baixa || 0)) * Math.min(1, (desde < 0.8 ? 22 : 7) * dt);
+    b.passo = (b.passo || 0) + Math.min(v, 7) * dt * 2.9;
+    const bal = Math.min(1, v / 3.5) * (deitado ? 0.3 : 1);
+    b.pivo.rotation.x = b.mira * 0.9 - m.rotation.x - b.baixa * 0.8 + coice * 0.06 + Math.sin(b.passo * 2) * 0.018 * bal;
+    b.pivo.rotation.y = b.baixa * 0.5 * b.lado + Math.sin(b.passo) * 0.03 * bal;
+    b.pivo.position.set(0, Math.abs(Math.sin(b.passo)) * 0.012 * bal - b.baixa * 0.05, coice * 0.045).applyQuaternion(b.pivo.quaternion);
+    b.pivo.position.y += b.rente * 0.07; b.pivo.position.z -= b.rente * 0.3;        // deitado, a arma vai à frente da cabeça
     b.arma.visible = comArma;
     if (comArma) {
       b.grupo.updateMatrixWorld(true);
+      if (b.suporte && (b.fixa > 0.001 || b.suporteTorto)) {     // agachado, deitado ou no ar o tronco se inclina: a arma continua apontando para onde a pessoa olha
+        const T = G.THREE, certo = b.suporte.parent.getWorldQuaternion(new T.Quaternion()).invert().multiply(m.getWorldQuaternion(new T.Quaternion()));
+        b.suporte.quaternion.copy(b.suporteQ).slerp(certo, b.fixa); b.suporteTorto = b.fixa > 0.001; b.suporte.updateMatrixWorld(true);
+      }
       alcancar(b, "Right", b.arma.localToWorld(b.rig ? new V3(MAO.x * b.lado, MAO.y, MAO.z) : new V3(0, -0.09, 0.07)), b.lado);
       if (longa) alcancar(b, "Left", b.arma.localToWorld(new V3(0, -0.04, -0.24)), -b.lado);
       else if (b.rig && o.pose === "pistola" && !(ARMAS[b.armaChave] || {}).faca) alcancar(b, "Left", b.arma.localToWorld(new V3(-0.035, -0.075, 0.06)), -b.lado);      // pistola com as duas mãos
@@ -1236,7 +1308,9 @@
       armarBoneco(b, j.vivo ? j.arma : null);
       b.colete.visible = !!(j.armadura & 1); b.capacete.visible = !!(j.armadura & 2); b.bone.visible = !b.capacete.visible;
       j.deitado = noDuto(j.cur) || !!j.noChao;
-      posar(b, j.cur, j.yaw, k, dt, { vivo: j.vivo, agachado: j.agachado && !j.deitado, deitado: j.deitado, pitch: j.pitch, pose: !a ? "solto" : a.faca || (v && v.curta) ? "pistola" : "arma" });
+      { const vy = dt > 0 && j.curY != null ? (j.cur.y - j.curY) / dt : 0; j.curY = j.cur.y;      // subindo ou caindo rápido, fora de escada: está no ar
+        j.arT = Math.abs(vy) > 1.3 && Math.abs(vy) < 40 && !j.deitado && !escadaEm(j.cur, 0.8) ? 0.18 : (j.arT || 0) - dt; }
+      posar(b, j.cur, j.yaw, k, dt, { vivo: j.vivo, agachado: j.agachado && !j.deitado, deitado: j.deitado, noAr: j.arT > 0, pitch: j.pitch, desdeTiro: (performance.now() - (j.tiroVisto || -1e6)) / 1000, pose: !a ? "solto" : a.faca || (v && v.curta) ? "pistola" : "arma" });
       b.placa.visible = j.vivo && j.time === meuTime;
       const al = j.alvo;
       if (al) {
@@ -1252,7 +1326,7 @@
       r.miraT = (r.miraT || 0) - dt;
       if (r.estado === 1 && r.miraT <= 0 && dx * dx + dz * dz > lim * lim) r.yaw = Math.atan2(-dx, -dz);   // só vira quando anda de verdade
       r.boneco.grupo.visible = r.estado !== 2;
-      posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: false, pitch: 0, pose: r.estado === 1 ? "pistola" : "preso", sentado: r.estado === 0 && !!r.civil.senta && !r.boneco.modelo, ajoelhado: r.estado === 0, deitado: noDuto(r.cur) });
+      posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: false, pitch: 0, desdeTiro: (performance.now() - (r.tiroVisto || -1e6)) / 1000, pose: r.estado === 1 ? "pistola" : "preso", sentado: r.estado === 0 && !!r.civil.senta && !r.boneco.modelo, ajoelhado: r.estado === 0, deitado: noDuto(r.cur) });
       r.boneco.arma.visible = r.estado === 1;                 // solto pelo policial, já armado
       r.boneco.colete.visible = !!(r.prot & 1) && r.estado !== 3; r.boneco.capacete.visible = !!(r.prot & 2) && r.estado !== 3;
     }
@@ -1341,15 +1415,20 @@
   }
   function tiroRemoto(m) {
     if (!emRodada() || m.id === mp.meuId) return;
-    const o = new V3().fromArray(m.o), e = new V3().fromArray(m.e);
+    const o = new V3().fromArray(m.o), e = new V3().fromArray(m.e), quem = mp.jogadores.get(m.id);
+    if (quem) quem.tiroVisto = performance.now();          // o boneco dá o coice e levanta a arma
     if (m.id === "refem") for (const r of mp.refens)          // o refém vira para onde atirou
-      if (r.estado === 1 && Math.hypot(r.pos.x - o.x, r.pos.z - o.z) < 1.5) { r.yaw = Math.atan2(-(e.x - o.x), -(e.z - o.z)); r.miraT = 0.9; }
+      if (r.estado === 1 && Math.hypot(r.pos.x - o.x, r.pos.z - o.z) < 1.5) { r.yaw = Math.atan2(-(e.x - o.x), -(e.z - o.z)); r.miraT = 0.9; r.tiroVisto = performance.now(); }
     try { G.fx.tracer(o, e); } catch {}
     try { G.render.lightPool.flash(o, 16756832, 30, 8, 0.05); } catch {}
     tocar("rifle_shot", { pos: o });
   }
 
   /* ----------------------------------------------------------------- máquinas */
+  // mirando com a sniper, a pessoa some para máquinas e bots (só gente de verdade a vê)
+  const mirandoSniper = j => !j.bot && (j.id === mp.meuId ? !!mp.mirando : !!j.mirando);
+  const armaDe = j => ARMAS[j.id === mp.meuId ? mp.arma : j.arma];
+  let ninguem = null;
   function jogadoresVivos() {
     const l = [];
     for (const j of mp.jogadores.values()) if (j.vivo) l.push(j);
@@ -1365,11 +1444,22 @@
         if (!(emRodada() && mp.anfitriao)) return atualizar(dt);
         alvoT -= dt;
         if (alvoT <= 0 || (alvo && !alvo.alive)) {
-          alvoT = 0.5; alvo = null; let melhor = 1e9;
+          alvoT = 0.5; alvo = null; let melhor = 1e9, achou = false;
+          if (e._antes) { const mx = e.pos.x - e._antes.x, mz = e.pos.z - e._antes.z, m = Math.hypot(mx, mz); if (m > 0.05) e._dir = [mx / m, mz / m]; }      // para onde a máquina está indo (é para lá que ela olha)
+          (e._antes || (e._antes = new V3())).copy(e.pos);
           for (const j of jogadoresVivos()) {
-            const d = posDe(j).distanceToSquared(e.pos);
-            if (d < melhor) { melhor = d; alvo = j.id === mp.meuId ? null : j.alvo; }
+            const p = posDe(j), d = p.distanceToSquared(e.pos);
+            if (d >= melhor || mirandoSniper(j)) continue;
+            if (ehDrone && p.y > ALTO) continue;                       // drone não pega quem está no alto
+            if (!j.bot && armaDe(j) && armaDe(j).faca) {               // de faca: só se a máquina der de cara com a pessoa
+              const dx = p.x - e.pos.x, dz = p.z - e.pos.z, r = Math.hypot(dx, dz) || 1, f = e._dir;
+              if (r > 15 || !f || (dx * f[0] + dz * f[1]) / r < 0.5) continue;
+              let livre = false; try { livre = G.physics.lineOfSight(new V3(e.pos.x, e.pos.y + 0.5, e.pos.z), new V3(p.x, p.y + 1.1, p.z)); } catch {}
+              if (!livre) continue;
+            }
+            melhor = d; achou = true; alvo = j.id === mp.meuId ? null : j.alvo;
           }
+          if (!achou) alvo = ninguem || (ninguem = criarAlvo({ cur: new V3(0, -300, 0), vivo: false }));      // ninguém à vista: não persegue nem atira
         }
         const real = G.player;
         if (alvo) G.player = alvo;
@@ -1621,8 +1711,23 @@
   function portas(dt) {
     const p = G.player, S = SALA;
     mp.passagemT -= dt;
-    if (!p.alive || mp.fase !== "valendo" || Math.abs(p.pos.y - S.chao) > 1.2) return;
     const apertou = G.input.pressed("interact") && mp.passagemT <= 0;
+    if (p.alive && mp.fase === "valendo" && Math.abs(p.pos.y - S.teto) < 0.8 && Math.hypot(p.pos.x - SECRETA[0], p.pos.z - SECRETA[1]) < 1.4) {
+      G.hud.setPrompt("Saída secreta · destino surpresa", 0);
+      if (apertou) {
+        let q = null;
+        for (let k = 0; k < 30 && !q; k++) {            // um ponto qualquer do mapa, no chão e fora do galpão
+          let c = null; try { c = G.physics.nav.randomPoint(new V3(0, 0, 0), 38); } catch {}
+          if (c && !(c.x > -17 && c.x < 13 && c.z < -10) && G.physics.groundHeight(c.x, c.z, 0.6) < 0.5) q = c;
+        }
+        if (!q) q = { x: RESGATES[4][0], z: RESGATES[4][1] };
+        p.pos.set(q.x, 0.05, q.z); p.vel.set(0, 0, 0); mp.quedaTopo = 0.05;
+        mp.passagemT = 1.5; (G.render.post || {}).flash = 0.6;
+        tocar("objective"); G.hud.message("Saída secreta: você saiu em outro ponto do mapa", 3);
+      }
+      return;
+    }
+    if (!p.alive || mp.fase !== "valendo" || Math.abs(p.pos.y - S.chao) > 1.2) return;
     if (pertoDaPorta()) {
       G.hud.setPrompt(portaAberta ? "Fechar a porta" : "Abrir a porta", 0);
       if (apertou) { mp.passagemT = 0.5; enviar({ t: "porta", aberta: !portaAberta }); }
@@ -1905,6 +2010,7 @@
         // os degrauzinhos não podem tampar a saída dos poços do duto: em volta de cada poço fica um vão
         let cortes = [-16.3, 12.3];
         for (const [cx, cz] of [[D.xe, D.zn], [0.15, D.zs]]) if (zb > cz - 0.75 && za < cz + 0.75) cortes = cortes.concat([cx - 0.8, cx + 0.8]);
+        if (zb > -17.38 && za < -15.25) cortes = cortes.concat([5.1, 6.63]);      // abertura da escada interna
         cortes.sort((p, q) => p - q);
         for (let i = 0; i + 1 < cortes.length; i += 2) fis.addBox([cortes[i], baixo - 0.05, za], [cortes[i + 1], baixo + alt, zb], { surface: "metal", playerOnly: true });
       }
@@ -1925,7 +2031,24 @@
     bloco(grade, A2.x1, A2.y - 0.1, M.z0, M.x1, A2.y, A2.z1, true); bloco(grade, M.x0, A2.y - 0.1, A2.z1, M.x1, A2.y, M.z1, true); bloco(grade, M.x0, A2.y - 0.1, M.z0, A2.x0, A2.y, A2.z1, true);
     for (const z of [M.z0, M.z1 - 0.12]) bloco(escuro, M.x0, A2.y - 0.3, z, M.x1 + 0.6, A2.y - 0.1, z + 0.12);
     for (const [x, z] of [[M.x0, M.z0], [M.x0, M.z1], [M.x1, M.z1]]) bloco(escuro, x - 0.04, M.y, z - 0.04, x + 0.04, A2.y, z + 0.04);      // montantes entre os dois pisos
-    corrimao(M.x0, M.z0, M.x1, M.z0, A2.y); corrimao(M.x0, M.z1, M.x1, M.z1, A2.y); corrimao(M.x0, M.z0, M.x0, M.z1, A2.y); corrimao(M.x1, M.z0, M.x1, M.z1, A2.y);
+    corrimao(M.x0, M.z0, M.x1, M.z0, A2.y); corrimao(M.x0, M.z1, M.x1, M.z1, A2.y); corrimao(M.x0, M.z0, M.x0, M.z1, A2.y); corrimao(M.x1, 4.75, M.x1, M.z1, A2.y);
+    // convés grande lá no alto, entre as quatro pernas da torre, ligado ao piso da escada por uma passarela
+    const C = { x0: 19.12, x1: 27.88, z0: -4.78, z1: 4.7 };
+    bloco(grade, M.x1, A2.y - 0.1, M.z0, C.x0, A2.y, C.z1, true); bloco(grade, C.x0, A2.y - 0.1, C.z0, C.x1, A2.y, C.z1, true);
+    for (const x of [C.x0, (C.x0 + C.x1) / 2 - 0.06, C.x1 - 0.12]) bloco(escuro, x, A2.y - 0.3, C.z0, x + 0.12, A2.y - 0.1, C.z1);
+    for (const z of [C.z0, C.z1 - 0.12]) bloco(escuro, C.x0, A2.y - 0.3, z, C.x1, A2.y - 0.1, z + 0.12);
+    corrimao(M.x1, M.z0, C.x0, M.z0, A2.y); corrimao(M.x1, C.z1, C.x1, C.z1, A2.y); corrimao(C.x0, C.z0, C.x0, M.z0, A2.y);
+    corrimao(C.x0, C.z0, C.x1, C.z0, A2.y); corrimao(C.x1, C.z0, C.x1, C.z1, A2.y);
+    // alçapão secreto em cima da casinha (moldura listrada, tampa escura e uma luz)
+    { const [ax, az] = SECRETA, y = S.teto;
+      bloco(escuro, ax - 0.5, y, az - 0.5, ax + 0.5, y + 0.05, az + 0.5);
+      for (const [xa, za, xb, zb] of [[-0.62, -0.62, 0.62, -0.5], [-0.62, 0.5, 0.62, 0.62], [-0.62, -0.5, -0.5, 0.5], [0.5, -0.5, 0.62, 0.5]]) bloco(listra, ax + xa, y, az + za, ax + xb, y + 0.1, az + zb);
+      bloco(amarelo, ax - 0.6, y, az - 0.6, ax - 0.55, y + 1.3, az - 0.55); bloco(luz, ax - 0.62, y + 1.3, az - 0.62, ax - 0.53, y + 1.42, az - 0.53); }
+    // no telhado: moldura listrada e um poste com luz em cada entrada (os dois poços do duto e a escada interna)
+    for (const [cx, cz, y, mx, mz] of [[D.xe, D.zn, 8.33, 0.56, 0.56], [0.15, D.zs, 8.33, 0.56, 0.56], [5.865, -16.315, 8.96, 0.76, 1.1]]) {
+      for (const [xa, za, xb, zb] of [[-mx - 0.1, -mz - 0.1, mx + 0.1, -mz], [-mx - 0.1, mz, mx + 0.1, mz + 0.1], [-mx - 0.1, -mz, -mx, mz], [mx, -mz, mx + 0.1, mz]]) bloco(listra, cx + xa, y, cz + za, cx + xb, y + 0.07, cz + zb);
+      bloco(amarelo, cx - mx - 0.1, y, cz - mz - 0.1, cx - mx - 0.05, y + 1.5, cz - mz - 0.05); bloco(luz, cx - mx - 0.12, y + 1.5, cz - mz - 0.12, cx - mx - 0.03, y + 1.62, cz - mz - 0.03);
+    }
     ESCADAS.push({ x: 16.1, z: 4.1, y0: M.y, y1: A2.y + 0.12, nx: 0, nz: 1, d: 0.42 });
     for (const s of escadasDosContainers()) ESCADAS.push(s);
     // escadas de mão: dois montantes amarelos e degraus de aço
@@ -1979,6 +2102,33 @@
     for (const b of mp.grades) b.playerOnly = sim;
   }
   // todo quadro, antes do jogo mover o jogador: correr no C, rastejar no duto, subir e descer escada de mão, dano de queda
+  // topo de um obstáculo logo à frente em que dá para subir com um pulo (até mais ou menos a altura de uma pessoa), ou null
+  function degrauNaFrente(pos, fx, fz, base) {
+    const x = pos.x + fx * 0.6, z = pos.z + fz * 0.6, cx = G.physics.boxes; let topo = null;
+    for (const b of cx) {
+      if (b.bulletOnly || b.playerOnly || x < b.min.x || x > b.max.x || z < b.min.z || z > b.max.z) continue;
+      if (b.max.x - b.min.x < 0.3 || b.max.z - b.min.z < 0.3) continue;                 // grade, corrimão, poste: não
+      if (b.max.y > pos.y + 0.3 && b.max.y <= base + 1.95 && b.min.y < pos.y + 1.3 && (topo == null || b.max.y > topo)) topo = b.max.y;
+    }
+    if (topo == null) return null;
+    for (const b of cx) if (!b.bulletOnly && x > b.min.x && x < b.max.x && z > b.min.z && z < b.max.z && b.min.y < topo + 1.15 && b.max.y > topo + 0.05) return null;      // sem espaço em cima
+    return topo;
+  }
+  // no duto não dá para virar o corpo: olha-se só para a frente (um pouco para os lados) e S anda de ré
+  function travarNoDuto() {
+    const p = G.player; let zona = null;
+    if (emRodada() && p.alive) for (const d of DEITAR) if (p.pos.x > d[0] && p.pos.x < d[2] && p.pos.z > d[1] && p.pos.z < d[3] && p.pos.y > d[4] && p.pos.y < d[5]) { zona = d; break; }
+    if (!zona) { mp.dutoYaw = null; mp.dutoZona = null; return; }
+    const ex = zona[2] - zona[0], ez = zona[3] - zona[1], comprida = Math.abs(ex - ez) > 0.3;
+    if (mp.dutoYaw == null || (comprida && zona !== mp.dutoZona)) {
+      const cand = !comprida ? [0, Math.PI / 2, Math.PI, -Math.PI / 2] : ex > ez ? [Math.PI / 2, -Math.PI / 2] : [0, Math.PI];
+      let melhor = 9;
+      for (const c of cand) { const d = Math.abs(Math.atan2(Math.sin(p.yaw - c), Math.cos(p.yaw - c))); if (d < melhor) { melhor = d; mp.dutoYaw = c; } }
+    }
+    if (comprida || !mp.dutoZona) mp.dutoZona = zona;
+    const d = Math.atan2(Math.sin(p.yaw - mp.dutoYaw), Math.cos(p.yaw - mp.dutoYaw)), lim = 1.25;
+    if (Math.abs(d) > lim) { p.yaw = mp.dutoYaw + Math.sign(d) * lim; G.hud.message("No duto não dá para virar · S anda de ré", 0.4); }
+  }
   function movimentoEspecial(dt) {
     const p = G.player, t = p.tuning, inp = G.input;
     if (!p.alive || !p.enabled) { mp.naEscada = null; mp.deitado = false; mp.quedaTopo = p.pos.y; return; }
@@ -1994,11 +2144,16 @@
     if (e && p.onGround && p.pos.y < e.y0 + 0.15 && !(sobe > 0.3 && p.forward.x * e.nx + p.forward.z * e.nz > 0.3)) e = null;   // no chão, só sobe quem vai de frente para ela
     const querDescer = sobe * (p.pitch > -0.5 ? 1 : -1) < -0.3;
     if (e && p.onGround && p.pos.y > e.y1 - 0.3 && !querDescer && Math.hypot(p.pos.x - e.x, p.pos.z - e.z) > 0.3) e = null;     // em pé na beira do topo
+    if (!e && p.onGround && !deitar)                   // no alto de uma escada: E já põe a pessoa nela, pronta para descer
+      for (const s of ESCADAS) if (p.pos.y > s.y1 - 0.95 && p.pos.y < s.y1 + 0.4 && Math.hypot(p.pos.x - s.x, p.pos.z - s.z) < 1.6) {
+        G.hud.message("E · descer pela escada", 0.3);
+        if (inp.pressed("interact")) { p.pos.set(s.x, Math.min(p.pos.y, s.y1) - 0.4, s.z); p.vel.set(0, 0, 0); mp.descendo = true; e = s; }
+        break;
+      }
     mp.naEscada = e;
-    if (!e && p.onGround)                              // parado no alto de uma escada: lembra como descer
-      for (const s of ESCADAS) if (Math.abs(p.pos.y - s.y1) < 0.45 && Math.hypot(p.pos.x - s.x, p.pos.z - s.z) < 1.2) { G.hud.message("Para descer: olhe para baixo e aperte W na escada", 0.3); break; }
     if (e) {
-      let v = sobe * (p.pitch > -0.5 ? 1 : -1) * 3.2;    // W sobe; olhando para baixo, W desce (S faz o contrário)
+      let v = sobe * (p.pitch > -0.5 ? 1 : -1) * 3.9;    // W sobe; olhando para baixo, W desce (S faz o contrário)
+      if (mp.descendo && Math.abs(sobe) < 0.3) v = -3.9; else mp.descendo = false;                                        // acabou de pegar a escada pelo alto: começa descendo
       if ((v > 0 && p.pos.y >= e.y1) || (v < 0 && p.pos.y <= e.y0 + 0.02)) v = 0;
       if (p.pos.y > e.y1 + 0.03) v = -1.5;               // passou do topo: volta para a altura do piso
       p.vel.y = v + t.gravity * dt * 0.5;
@@ -2008,11 +2163,27 @@
         p.pos.x += (e.x - p.pos.x) * q; p.pos.z += (e.z - p.pos.z) * q;
       }
       mp.quedaTopo = p.pos.y;
-      if (Math.abs(v) < 0.1) G.hud.message("Escada: W sobe · olhando para baixo, W desce", 0.3);
+      if (Math.abs(v) < 0.1) G.hud.message("Escada: W sobe · S desce", 0.3);
+    } else if (mp.subindo) {                             // pulou de frente para um obstáculo: sobe nele
+      const s = mp.subindo; s.t += dt;
+      if (p.pos.y < s.topo + 0.08) { p.vel.y = 5.2 + t.gravity * dt; p.vel.x = s.fx * 0.5; p.vel.z = s.fz * 0.5; }
+      else { p.vel.x = s.fx * 3.4; p.vel.z = s.fz * 3.4; p.vel.y = Math.min(p.vel.y, 0.9); s.fim = (s.fim || 0) + dt; }
+      if (s.t > 1.3 || s.fim > 0.2 || (p.onGround && s.t > 0.2)) mp.subindo = null;
+      mp.quedaTopo = p.pos.y;
     } else if (p.onGround) {
+      mp.chaoY = p.pos.y;
       if (mp.quedaTopo - p.pos.y > QUEDA.altura && mp.fase === "valendo") { mp.ultimoDano = { por: "queda", t: performance.now() }; p.damage((p.maxHealth || 100) * QUEDA.dano, null); G.hud.message("Queda: metade da vida", 2.5); }
       mp.quedaTopo = p.pos.y;
-    } else mp.quedaTopo = Math.max(mp.quedaTopo, p.pos.y);
+    } else {
+      mp.quedaTopo = Math.max(mp.quedaTopo, p.pos.y);
+      if (!deitar && sobe > 0.3 && p.vel.y > -3.5) {     // no ar, indo para a frente: há onde subir?
+        const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw), base = mp.chaoY == null ? p.pos.y : mp.chaoY, topo = degrauNaFrente(p.pos, fx, fz, base);
+        if (topo != null && p.pos.y - base < 1.6) mp.subindo = { topo, fx, fz, t: 0 };
+      }
+    }
+    if (e || p.onGround && mp.subindo && mp.subindo.t > 0.2) mp.subindo = null;
+    if (!e) mp.descendo = false;
+    travarNoDuto();
   }
   window.addEventListener("keydown", ev => {      // Z deita e levanta (no duto é automático)
     if (ev.code === "KeyZ" && !ev.repeat && emRodada() && G.player.alive && !(tela && !tela.hidden)) { mp.deitarManual = !mp.deitarManual; G.hud.message(mp.deitarManual ? "Deitado · Z levanta" : "De pé", 1.2); }
@@ -2096,7 +2267,7 @@
         const viaAntes = ia.visto;
         ia.visto = false; let melhor = null, dMelhor = 1e9;
         for (const j of mp.jogadores.values()) {
-          if (!j.vivo || j.time === b.time) continue;
+          if (!j.vivo || j.time === b.time || mirandoSniper(j)) continue;
           const v = ve(j);
           if (v || ouve(j)) ia.sabe[j.id] = agora;                          // percebeu este inimigo agora
           if (j === ia.alvo) ia.visto = v;
@@ -2125,10 +2296,36 @@
         if (d < 0.6) ia.caminho.shift(); else { wx = dx / d; wz = dz / d; }
       } else if (ia.visto && ia.alvo) {            // em combate: passos de lado
         ia.ladoT -= dt;
-        if (ia.ladoT <= 0) { ia.ladoT = 1.4 + Math.random() * 1.8; ia.lado = Math.random() < 0.3 ? 0 : Math.random() < 0.5 ? 1 : -1; }      // às vezes fica parado atirando
+        if (ia.ladoT <= 0) { ia.ladoT = 1.4 + Math.random() * 1.8; ia.lado = Math.random() < 0.5 ? 1 : -1; }      // nunca fica parado: vai de um lado para o outro
         const p = posDe(ia.alvo), dx = p.x - b.pos.x, dz = p.z - b.pos.z, d = Math.hypot(dx, dz) || 1;
-        wx = -dz / d * ia.lado * 0.4; wz = dx / d * ia.lado * 0.4;
+        const chega = d > 14 ? 0.35 : d < 5 ? -0.3 : 0;      // de longe se aproxima, colado recua
+        wx = -dz / d * ia.lado * 0.5 + dx / d * chega; wz = dx / d * ia.lado * 0.5 + dz / d * chega;
+      } else if (ia.alvo && ia.dist > 2.5) {                 // sabe do alvo mas não achou caminho: vai direto
+        const p = posDe(ia.alvo), dx = p.x - b.pos.x, dz = p.z - b.pos.z, d = Math.hypot(dx, dz) || 1;
+        wx = dx / d * 0.8; wz = dz / d * 0.8;
       }
+      if (!wx && !wz) {                                      // sem nada para fazer: anda a esmo, nunca fica parado
+        ia.vagarT = (ia.vagarT || 0) - dt;
+        if (ia.vagarT <= 0 || !ia.vagar) { const a = Math.random() * Math.PI * 2; ia.vagar = [Math.cos(a), Math.sin(a)]; ia.vagarT = 1 + Math.random() * 1.5; }
+        let livre = true; try { livre = G.physics.nav.isWalkable(b.pos.x + ia.vagar[0] * 1.2, b.pos.z + ia.vagar[1] * 1.2); } catch {}
+        if (livre) { wx = ia.vagar[0] * 0.7; wz = ia.vagar[1] * 0.7; } else ia.vagarT = 0;
+      }
+      // travou em alguma coisa? pula o obstáculo se der; senão dá um pulinho, e se continuar preso desvia e refaz o caminho
+      ia.medeT = (ia.medeT || 0) - dt;
+      if (ia.medeT <= 0) {
+        ia.medeT = 0.45;
+        const andou = ia.medePos ? Math.hypot(b.pos.x - ia.medePos.x, b.pos.z - ia.medePos.z) : 9;
+        (ia.medePos || (ia.medePos = new V3())).copy(b.pos);
+        if (andou < 0.3 && b.pisando && (wx || wz)) {
+          ia.preso = (ia.preso || 0) + 1;
+          const n = Math.hypot(wx, wz), topo = degrauNaFrente(b.pos, wx / n, wz / n, b.pos.y);
+          if (topo != null) b.vel.y = Math.sqrt(40 * (topo - b.pos.y + 0.35));
+          else if (ia.preso === 1) b.vel.y = 6.3;
+          if (ia.preso >= 2 || topo == null) { const a = Math.random() * Math.PI * 2; ia.desvio = [Math.cos(a), Math.sin(a)]; ia.desvioT = 0.5 + Math.random() * 0.6; ia.caminho = null; ia.caminhoT = 0; ia.rondaT = 0; }
+          if (topo != null) b.pisando = false;
+        } else if (andou > 0.6) ia.preso = 0;
+      }
+      if (ia.desvioT > 0) { ia.desvioT -= dt; wx = ia.desvio[0]; wz = ia.desvio[1]; }
       { const q = Math.min(1, 5 * dt); b.vel.x += (wx * cfg.vel - b.vel.x) * q; b.vel.z += (wz * cfg.vel - b.vel.z) * q; }      // acelera e freia aos poucos, sem tranco
       b.vel.y -= 20 * dt;
       let res = null; try { res = G.physics.moveCapsule(b.pos, b.vel, dt, 0.3, 1.7, b.pisando); } catch {}
@@ -2503,7 +2700,9 @@
     const b = mp.bolsa, mostra = !!(j && p.alive);
     bolsaEl.hidden = !mostra;
     if (mostra) {
-      const txt = (ARMAS[mp.arma] && ARMAS[mp.arma].faca ? `<span class="mp-furtivo">Modo furtivo · ninguém ouve seus passos</span>` : "") +
+      const txt = (ARMAS[mp.arma] && ARMAS[mp.arma].faca ? `<span class="mp-furtivo">Modo furtivo · ninguém ouve seus passos · máquinas só te veem de frente</span>` : "") +
+        (mp.mirando ? `<span class="mp-furtivo">Na mira da sniper · máquinas e bots não veem você</span>` : "") +
+        (p.pos.y > ALTO && !mp.mirando ? `<span class="mp-furtivo">No alto · os drones não pegam você aqui</span>` : "") +
         (b.granada ? `<span><kbd>4</kbd> Jogar granada <b>${b.granada}</b></span>` : "") +
         (b.bomba ? `<span><kbd>B</kbd> Armar bomba aqui · explode em ${CFG.bomba.pavio}s <b>${b.bomba}</b></span>` : "") +
         (b.relogio ? `<span><kbd>V</kbd> Armar bomba-relógio de ${CFG.relogio.tempos[mp.tempoIdx]}s <b>${b.relogio}</b> · <kbd>T</kbd> muda o tempo</span>` : "") +
@@ -2536,6 +2735,14 @@
       chaves.forEach((k, n) => {
         if (dentro) return lista.push([mp.proxId++, k, +(-15.2 + n * 0.56 + (fila ? 0.12 : -0.12)).toFixed(2), +(SALA.z1 - 0.35).toFixed(2), SALA.chao, 1]);   // no cabide sob a janela
         const ang = n / chaves.length * Math.PI * 2, q = pisavel(pt[0] + Math.cos(ang) * 2, pt[2] + Math.sin(ang) * 2);
+        lista.push([mp.proxId++, k, +q[0].toFixed(2), +q[1].toFixed(2), 0]);
+      });
+    }
+    // e um conjunto completo (com a sniper) no chão de cada base, para quem nascer longe ou quiser trocar
+    for (const [t, cx, cz] of [["p", BASE_POLICIA[0] + 3.5, BASE_POLICIA[1]], ["t", 24, 15]]) {
+      const chaves = Object.keys(ARMAS).filter(k => ARMAS[k].time === t && !ARMAS[k].faca && !ARMAS[k].reserva);
+      chaves.forEach((k, n) => {
+        const ang = n / chaves.length * Math.PI * 2, q = pisavel(cx + Math.cos(ang) * 2.8, cz + Math.sin(ang) * 2.8);
         lista.push([mp.proxId++, k, +q[0].toFixed(2), +q[1].toFixed(2), 0]);
       });
     }
@@ -2634,6 +2841,7 @@
     if (a && !a.faca && vale && w.ammo <= 0 && w.state !== "reloading" && !mp.trocaPara) { try { w.reloadNow(); } catch {} }      // pente vazio: recarrega sozinho
     if (!mp.linhaMunicao) mp.linhaMunicao = document.querySelector(".h-ammo-row");
     if (mp.linhaMunicao) mp.linhaMunicao.style.visibility = a && a.faca ? "hidden" : "";                                         // de faca não há munição para mostrar       // munição infinita: R sempre recarrega
+    mp.mirando = !!(a && a.mira && p.alive && G.input.ads);
     p.tuning.fovAds = a && a.mira ? (p.baseFov || 75) / a.mira : 52; p.tuning.adsLook = a && a.mira ? 0.22 : 0.6;      // zoom da sniper no botão direito
     if (a && a.reserva && !temReserva()) { mp.arma = mp.principal; return; }      // pegou uma arma comum: a reserva some
     w.name = a ? a.nome : "Sem arma";
@@ -2836,7 +3044,7 @@
       return `<section style="--cor:${TIMES[t].css}"><h3>${TIMES[t].nome} <b>${mp.placar[t]}</b> <em>${mp.placar[t] === 1 ? "vitória" : "vitórias"} · ${gente.filter(j => j.vivo).length} de ${gente.length} vivos</em></h3>
         <table><tr><th>Jogador</th><th>Situação</th><th>Abates na rodada</th><th>Abates na partida</th><th>Mortes</th></tr>${gente.map(linha).join("") || `<tr><td colspan="5">ninguém</td></tr>`}</table></section>`;
     };
-    tabEl.innerHTML = `<h2>Placar · rodada ${mp.rodada} · vence quem fizer ${CFG.rodadasParaVencer}</h2>${time("p")}${time("t")}`;
+    tabEl.innerHTML = `<h2>Placar · rodada ${mp.rodada} de ${mp.rodadasTotal}</h2>${time("p")}${time("t")}`;
   }
   window.addEventListener("keydown", ev => { if (ev.code === "Tab" && emRodada()) { ev.preventDefault(); if (tabEl.hidden) { tabEl.hidden = false; desenharTab(); } } });
   window.addEventListener("keyup", ev => { if (ev.code === "Tab" && tabEl) { ev.preventDefault(); tabEl.hidden = true; } });
@@ -2876,7 +3084,7 @@
       mp.envioT -= dt;
       if (mp.envioT <= 0) {
         mp.envioT = 1 / 30;      // 30 atualizações por segundo entre os jogadores
-        if (j) enviar({ t: "estado", p: arr(p.pos), y: +p.yaw.toFixed(3), x: +p.pitch.toFixed(3), c: mp.deitarManual ? 2 : p.crouching ? 1 : 0, v: j.vivo ? 1 : 0, a: (mp.colete ? 1 : 0) | (mp.capacete ? 2 : 0), w: mp.arma || "",
+        if (j) enviar({ t: "estado", p: arr(p.pos), y: +p.yaw.toFixed(3), x: +p.pitch.toFixed(3), c: mp.deitarManual ? 2 : p.crouching ? 1 : 0, v: j.vivo ? 1 : 0, a: (mp.colete ? 1 : 0) | (mp.capacete ? 2 : 0), w: mp.arma || "", s: mp.mirando ? 1 : undefined,
           k: mp.carro.oc[0] === mp.meuId && mp.carro.pos ? [+mp.carro.pos.x.toFixed(2), +mp.carro.pos.z.toFixed(2), +mp.carro.yaw.toFixed(3)] : undefined });
         if (mp.anfitriao) paraTodos({ t: "estados", tempo: +mp.tempo.toFixed(1),
           j: [...mp.jogadores.values()].map(x => [x.id, ...arr(x.pos), +x.yaw.toFixed(3), +x.pitch.toFixed(3), x.noChao ? 2 : x.agachado ? 1 : 0, x.vivo ? 1 : 0, x.armadura | 0, x.id === mp.meuId ? mp.arma || "" : x.arma || ""]),
@@ -2909,7 +3117,7 @@
     const armaAtualiza = G.weapon.update;            // deitado, a câmera (e de onde sai o tiro) desce até perto do chão
     G.weapon.update = function (...a) {
       if (emRodada() && mp.deitado && G.player.alive) { G.camera.position.y -= 0.55; G.player.eye.y -= 0.55; }
-      assistir();
+      assistir(); travarNoDuto();
       const r = armaAtualiza.apply(this, a);
       if (mp.trocaPara && emRodada()) {                    // movimento da troca: mão para baixo e para trás, depois volta com a outra arma
         const t = mp.trocaT, k = t < TROCA.desce ? t / TROCA.desce : Math.max(0, 1 - (t - TROCA.desce) / TROCA.sobe), e = k * k * (3 - 2 * k);

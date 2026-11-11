@@ -14,3 +14,8 @@ carro.glb    O carro. Arquivo "CesiumMilkTruck.glb" dos modelos de exemplo do gl
 
 A pasta lib/ traz o carregador de modelos do Three.js r180 (GLTFLoader, SkeletonUtils, BufferGeometryUtils),
 licença MIT, com uma única adaptação: usa o Three.js que já vem dentro do jogo.
+
+animacoes.json (versão 37): além de parado/andar/correr (Xbot.glb do Three.js), traz as posturas rastejando, deitado,
+agachado parado, agachado andando, no ar e caindo morto. São animações Mixamo (Adobe), baixadas do repositório
+github.com/MisterYI/deevid-mixamo-assets (Crawling_Backwards tocada ao contrário, Skinning_Test, Idle_Crouching_Aiming,
+Crouch_Walk_Forward, Jump e Death) e convertidas para rotações relativas ao repouso em T.
