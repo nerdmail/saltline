@@ -787,6 +787,7 @@
     for (const j of mp.jogadores.values()) if (j.boneco) j.boneco.grupo.visible = false;
     for (const r of mp.refens) r.boneco.grupo.visible = false;
     placarEl.hidden = true; vidaEl.hidden = true; tabEl.hidden = true;
+    { const ve = document.getElementById("versao"); if (ve) ve.hidden = false; }
   }
   // objetivo, contador e marcadores do HUD; refaz só quando a situação dos reféns muda
   function atualizarObjetivo() {
@@ -2846,6 +2847,8 @@
       if (era === codigo) pedirPerfil().then(nome => abrirComoAnfitriao(codigo, nome));   // o anfitrião recarregou a página
       else entrarNaSala(codigo);
     }
+    const versaoEl = document.getElementById("versao");      // a versão some enquanto se joga (solo ou multiplayer)
+    if (versaoEl) { G.events.on("game:state", ev => { versaoEl.hidden = !!ev && ev.state === "playing"; }); }
     window.__mp = mp;
   }
   const espera = setInterval(() => {

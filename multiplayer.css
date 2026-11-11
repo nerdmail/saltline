@@ -77,3 +77,8 @@
 .mp-tab td:nth-child(n+3), .mp-tab th:nth-child(n+3) { text-align: right; font-family: var(--f-mono); }
 .mp-tab tr.mp-morto td { color: var(--bone-faint); }
 .mp-tab tr.mp-eu td:first-child { color: var(--signal); }
+
+/* número da versão, embaixo à direita (some durante a partida) */
+#versao { position: absolute; z-index: 70; right: max(14px, env(safe-area-inset-right, 0px)); bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  font: 500 12px/1 var(--f-mono, monospace); letter-spacing: .08em; color: rgba(232, 228, 218, .7); text-shadow: 0 1px 2px rgba(0, 0, 0, .8); pointer-events: none; }
+#versao[hidden] { display: none; }
