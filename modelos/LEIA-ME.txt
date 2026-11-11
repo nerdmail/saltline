@@ -6,5 +6,9 @@ soldado.glb  Policiais. Arquivo "Soldier.glb" dos exemplos do Three.js (r180):
 civil2.glb   Reféns e Terroristas. Arquivo "readyplayer.me.glb" dos mesmos exemplos (avatar Ready Player Me).
              Não traz animação: a passada e os braços são movidos pelo código do jogo.
 
+carro.glb    O carro. Arquivo "CesiumMilkTruck.glb" dos modelos de exemplo do glTF (Khronos):
+             https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CesiumMilkTruck
+             (c) 2017 Cesium, licença Creative Commons Attribution 4.0 International. No jogo a pintura foi escurecida.
+
 A pasta lib/ traz o carregador de modelos do Three.js r180 (GLTFLoader, SkeletonUtils, BufferGeometryUtils),
 licença MIT, com uma única adaptação: usa o Three.js que já vem dentro do jogo.

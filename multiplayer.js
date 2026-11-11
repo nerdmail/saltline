@@ -85,6 +85,10 @@
     [-13.5, DUTO.zs - 0.5, 3.5, DUTO.zs + 0.5, 4.85, 6.6],
     [-13.5, -24.4, -12.5, DUTO.zs - 0.5, 4.85, 6.6], [-13.5, -17, -12.5, -16, 3.4, 6.6],
   ];
+  // carro: um por rodada, perto do meio do mapa. Cinco lugares [x, y, z] no espaço do carro (frente = -z, direita = +x):
+  // motorista, passageiro e três em cima da carroceria. Anda só no chão, na velocidade de uma pessoa (anda ou corre).
+  // Quem entra primeiro fica com ele para o seu time; o outro time só entra quando o carro estiver vazio.
+  const CARRO = { lugares: [[-0.5, 0.72, -1.25], [0.5, 0.72, -1.25], [-0.6, 2.08, 0.6], [0, 2.08, 1.25], [0.6, 2.08, 0.6]], alcance: 3.4, anda: 3.8, corre: 7.6, re: 3, giro: 1.8, comprimento: 4.4 };
   const QUEDA = { altura: 3.2, dano: 0.5 };     // cair de mais que isso tira metade da vida (só de jogador; refém não se machuca)
   const MESA = [-13.9, -12.1, -26.68];                                  // mesa encostada na parede norte: x de, x até, z da frente
   // quem são os reféns, na ordem das posições acima: cor da roupa, cabelo, tamanho e ritmo de caminhada
@@ -151,6 +155,7 @@
     granadas: [],             // granadas no ar: { pos, vel, t, por, malha }
     bolsa: { granada: 0, bomba: 0, relogio: 0 }, tempoIdx: 1, desarmarT: 0, proxId: 1,
     colete: false, capacete: false,     // proteção que eu estou usando
+    carro: { pos: null, yaw: 0, vel: 0, oc: [null, null, null, null, null], alvo: null, alvoYaw: 0, malha: null, mixer: null },
     correr: false, ctrl: false, deitado: false, naEscada: null, quedaTopo: 0, picharT: 0, grades: null,
     arma: null,               // chave em ARMAS da arma na mão, ou null
     armasChao: new Map(),     // id -> { id, arma, pos, malha, pedido }
@@ -262,6 +267,7 @@
       case "estado":
         if (id !== mp.meuId) { j.pos.fromArray(m.p); j.yaw = m.y; j.pitch = m.x; j.agachado = m.c === 1; }
         j.noChao = m.c === 2;                      // deitado por conta própria (tecla Z)
+        if (m.k && mp.carro.oc[0] === id && mp.carro.pos) { mp.carro.pos.set(m.k[0], 0, m.k[1]); mp.carro.yaw = m.k[2]; }      // quem dirige diz onde o carro está
         j.vivo = !!m.v; j.armadura = m.a | 0;
         break;
       case "tiro":
@@ -333,14 +339,25 @@
       }
       case "morri":
         if (j.vivo || id === mp.meuId) { j.vivo = false; paraTodos({ t: "baixa", quem: id, por: m.por || null }); }
+        tirarDoCarro(id);
         break;
+      case "carroQuer": {
+        const c = mp.carro, lugar = c.oc.indexOf(id);
+        if (!m.entrar) { tirarDoCarro(id); break; }
+        if (mp.fase !== "valendo" || !j.vivo || lugar >= 0 || !c.pos || Math.hypot(posDe(j).x - c.pos.x, posDe(j).z - c.pos.z) > CARRO.alcance + 0.6) break;
+        const dono = c.oc.map(o => mp.jogadores.get(o)).find(o => o);            // time de quem já está dentro
+        const livre = c.oc.indexOf(null);
+        if ((dono && dono.time !== j.time) || livre < 0) { paraUm(id, { t: "feed", html: dono && dono.time !== j.time ? "O carro está com o outro time" : "O carro está cheio" }); break; }
+        c.oc[livre] = id; arrumarCarro();
+        break;
+      }
     }
   }
   function saiu(id) {
     mp.cons.delete(id);
     const j = mp.jogadores.get(id);
     if (!j) return;
-    removerBoneco(j); mp.jogadores.delete(id);
+    removerBoneco(j); mp.jogadores.delete(id); if (mp.anfitriao) tirarDoCarro(id);
     if (mp.ativo) { paraTodos({ t: "feed", html: `<b>${esc(j.nome)}</b> saiu da sala` }); mandarLobby(); }
   }
   function mandarLobby() {
@@ -378,7 +395,9 @@
         }
         m.r.forEach((d, i) => { const r = mp.refens[i]; if (r) { r.pos.set(d[0], d[1], d[2]); r.estado = d[3]; r.lider = d[4]; r.prot = d[5] | 0; } });
         sincronizarMarionetes(m.m);
+        if (m.k && mp.carro.oc[0] !== mp.meuId) { mp.carro.alvo = new V3(m.k[0], 0, m.k[1]); mp.carro.alvoYaw = m.k[2]; }
         break;
+      case "carro": mp.carro.oc = m.oc; break;
       case "tiro": tiroRemoto(m); break;
       case "resgate":
         mp.resgateVisto = new V3(m.p[0], 0, m.p[1]); mp.resgateNome = m.nome; mp.assinatura = "";
@@ -561,6 +580,7 @@
         <li><b>Objetivo</b> Policiais soltam os reféns (segure E) e levam ao ponto de resgate mostrado no painel da sala. Terroristas impedem até o tempo acabar.</li>
         <li><b>Fim da rodada</b> Todos os reféns salvos, um refém morto, um time inteiro caído ou o tempo esgotado.</li>
         <li><b>Sniper</b> Um tiro por vez, zoom de 5x no botão direito. Mata jogador com um tiro, com ou sem colete; refém precisa de dois.</li>
+        <li><b>Carro</b> Há um por rodada, perto do meio do mapa. F entra e sai; cabem 5 (reféns também). Quem entra primeiro fica com ele: o outro time só entra com o carro vazio.</li>
         <li><b>Containers</b> Vários têm escada de mão para subir e atirar lá de cima.</li>
         <li><b>Armas</b> Todos nascem com a faca. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
         <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
@@ -645,7 +665,7 @@
       time.forEach((j, k) => { nasc[j.id] = pts[k]; j.vivo = true; j.naRodada = true; j.pos.set(pts[k][0], 0, pts[k][2]); j.cur.copy(j.pos); });
     }
     try { G.enemies.clear(); } catch {}
-    paraTodos({ t: "rodada", n: mp.rodada, placar: mp.placar, nasc, dificuldade: mp.dificuldade, itens: sortearItens(), armas: sortearArmas(nasc) });
+    paraTodos({ t: "rodada", n: mp.rodada, placar: mp.placar, nasc, dificuldade: mp.dificuldade, itens: sortearItens(), armas: sortearArmas(nasc), carro: sortearCarro() });
     mandarLobby();
     const r = RESGATES[Math.floor(Math.random() * RESGATES.length)], q = pisavel(r[0], r[1]);
     mp.resgate = new V3(q[0], 0, q[1]);
@@ -685,7 +705,7 @@
     fecharOverlay(); esconderMenuSolo();
     if (!mp.anfitriao) { try { G.enemies.clear(); } catch {} mp.marionetes.clear(); }
     prepararSala(); aplicarPorta(false);
-    zerarRefens(); limparExplosivos(); limparArmas();
+    zerarRefens(); limparExplosivos(); limparArmas(); porCarro(m.carro);
     for (const j of mp.jogadores.values()) { j.arma = j.time ? j.time + "_faca" : null; j.armadura = 0; }      // todo mundo nasce com a faca
     mp.arma = eu() && eu().time && m.nasc[mp.meuId] ? eu().time + "_faca" : null;
     for (const d of m.armas || []) porArmaNoChao(d);
@@ -728,6 +748,7 @@
       G.audio.setIntensity(0.15);
     } catch {}
     if (rotuloHud) rotuloHud.textContent = "Relés";
+    if (mp.carro.malha) mp.carro.malha.visible = false; mp.carro.pos = null; mp.carro.oc = [null, null, null, null, null];
     cenario.visible = false; explosivos.visible = false; bolsaEl.hidden = true; limparExplosivos(); limparArmas(); limparPichacoes();
     gradesVazadas(false);
     try { const t = G.player.tuning; t.sprint = 6.4; t.crouchHeight = 1.15; t.crouch = 1.9; } catch {}
@@ -777,6 +798,7 @@
         const c = await carregador.loadAsync("./modelos/civil2.glb");
         g.scene.updateMatrixWorld(true); c.scene.updateMatrixWorld(true);
         const clips = [];          // sem animação pronta: pernas e braços são movidos pelo código (ver posarModelo)
+        try { const k = await carregador.loadAsync("./modelos/carro.glb"); montarCarro(k); } catch (e) { console.warn("[mp] o modelo do carro não carregou; fica o carro feito por código", e); }
         civilModelo = { cena: c.scene, clips, clonar: SU.clone, mats: {}, virado: VIRAR_CIVIL };
         for (const j of mp.jogadores.values()) if (j.time === "t") removerBoneco(j);
         for (const r of mp.refens) if (r.civil.modelo) { const visivel = r.boneco.grupo.visible; removerBoneco(r); r.boneco = criarBoneco({ armado: false, civil: r.civil }); r.boneco.grupo.visible = visivel; }
@@ -1416,6 +1438,7 @@
     const ia = dif().refem;
     for (const r of mp.refens) {
       if (r.estado > 1) continue;
+      if (refemNoCarro(r, dt, ia)) continue;
       let wx = 0, wz = 0, ancora = r.casa, folga = 1.2, subir = null;
       if (r.estado === 1) {
         const lider = mp.jogadores.get(r.lider);
@@ -1473,14 +1496,16 @@
       if (r.noChao && r.vel.y < 0) r.vel.y = 0;
       if (r.pos.y < -1) { r.pos.y = 0; r.vel.y = 0; }
       if (r.estado === 1) atirarRefem(r, dt, ia);
-      if (r.estado === 1 && mp.resgate && Math.hypot(r.pos.x - mp.resgate.x, r.pos.z - mp.resgate.z) < RAIO_RESGATE) {
-        r.estado = 2;
-        paraTodos({ t: "refem", i: r.i, ev: "salvo", id: r.lider });
-        r.lider = null;
-        if (mp.refens.every(x => x.estado === 2)) fimDaRodada("p", "Todos os reféns foram resgatados");
-        else soltarOnda();
-      }
+      tentarSalvar(r);
     }
+  }
+  function tentarSalvar(r) {
+    if (r.estado !== 1 || !mp.resgate || Math.hypot(r.pos.x - mp.resgate.x, r.pos.z - mp.resgate.z) >= RAIO_RESGATE) return;
+    r.estado = 2;
+    paraTodos({ t: "refem", i: r.i, ev: "salvo", id: r.lider });
+    r.lider = null;
+    if (mp.refens.every(x => x.estado === 2)) fimDaRodada("p", "Todos os reféns foram resgatados");
+    else soltarOnda();
   }
   // policial: segurar E perto de um refém preso para soltá-lo
   function interagir(dt) {
@@ -1846,6 +1871,7 @@
   function movimentoEspecial(dt) {
     const p = G.player, t = p.tuning, inp = G.input;
     if (!p.alive || !p.enabled) { mp.naEscada = null; mp.deitado = false; mp.quedaTopo = p.pos.y; return; }
+    if (mp.carro.oc.indexOf(mp.meuId) >= 0) { inp.crouch = true; inp.sprint = false; mp.naEscada = null; mp.deitado = false; mp.deitarManual = false; mp.quedaTopo = p.pos.y; return; }      // sentado no carro
     if (mp.deitarManual && (mp.correr || mp.naEscada || inp.pressed("jump"))) mp.deitarManual = false;      // correr, pular ou pegar escada levanta
     const noTubo = noDuto(p.pos), deitar = noTubo || mp.deitarManual;
     inp.crouch = mp.ctrl || deitar;                      // no multiplayer o C corre; agachar fica no Ctrl
@@ -1890,6 +1916,132 @@
     mp.superUsado = true; p.maxHealth = 200; p.health = 200;
     mp.colete = true; mp.capacete = true; mp.reservaColete = 4; mp.reservaCapacete = 4;
     G.hud.message("Super poder ativado", 3);
+  });
+
+  /* ------------------------------------------------------------------- carro */
+  // lugar no mundo de um assento do carro
+  function lugarDoCarro(k, alvo) {
+    const c = mp.carro, l = CARRO.lugares[k], sy = Math.sin(c.yaw), cy = Math.cos(c.yaw);
+    return (alvo || new V3()).set(c.pos.x + cy * l[0] + sy * l[2], l[1], c.pos.z - sy * l[0] + cy * l[2]);
+  }
+  // o carro cabe aqui? (chão firme, sem parede, caixa ou degrau no caminho, dentro do mapa)
+  function carroCabe(x, z, yaw) {
+    const sy = Math.sin(yaw), cy = Math.cos(yaw), cx = G.physics.boxes;
+    for (const [lx, lz] of [[0, 0], [-1.05, -2], [1.05, -2], [-1.05, 2], [1.05, 2], [0, -2.1], [0, 2.1]]) {
+      const px = x + cy * lx + sy * lz, pz = z - sy * lx + cy * lz;
+      if (px < -39 || px > 39 || pz < -29 || pz > 29) return false;
+      let chao = 0; try { chao = G.physics.groundHeight(px, pz, 0.34); } catch {}
+      if (chao < -0.2) return false;                                        // água
+      if (cx.some(b => !b.bulletOnly && px > b.min.x && px < b.max.x && pz > b.min.z && pz < b.max.z && b.max.y > 0.34 && b.min.y < 1.7)) return false;
+    }
+    return true;
+  }
+  function sortearCarro() {                     // anfitrião: um lugar livre perto do meio do mapa
+    for (let t = 0; t < 80; t++) {
+      const x = (Math.random() - 0.5) * 30, z = (Math.random() - 0.5) * 20 + 4, yaw = Math.floor(Math.random() * 4) * Math.PI / 2;
+      if (carroCabe(x, z, yaw)) return [+x.toFixed(2), +z.toFixed(2), +yaw.toFixed(3)];
+    }
+    return null;
+  }
+  function porCarro(d) {                        // todos, no começo da rodada
+    const c = mp.carro;
+    c.oc = [null, null, null, null, null]; c.vel = 0; c.alvo = null;
+    c.pos = d ? new V3(d[0], 0, d[1]) : null; c.yaw = d ? d[2] : 0; c.alvoYaw = c.yaw;
+    if (!c.malha) montarCarro(null);
+    c.malha.visible = !!d;
+  }
+  // o modelo baixado (um caminhãozinho) é posto de frente para -z, com as rodas no chão e no comprimento certo;
+  // sem ele, fica um carro simples com os materiais do jogo
+  function montarCarro(gltf) {
+    const T = G.THREE, c = mp.carro, visivel = c.malha ? c.malha.visible : false;
+    if (c.malha) G.scene.remove(c.malha);
+    const g = c.malha = new T.Group(); c.mixer = null;
+    if (gltf) {
+      const m = gltf.scene; m.updateMatrixWorld(true);
+      const caixa = new T.Box3().setFromObject(m), meio = caixa.getCenter(new V3()), tam = caixa.getSize(new V3());
+      let frente = new V3(tam.x > tam.z ? 1 : 0, 0, tam.x > tam.z ? 0 : 1);
+      m.traverse(o => {                               // pintura escura, para combinar com o porto
+        if (!o.isMesh) return;
+        o.castShadow = true; o.receiveShadow = true;
+        for (const x of Array.isArray(o.material) ? o.material : [o.material]) if (/truck/i.test(x.name) && x.color) x.color.set(0x59636b);
+      });
+      m.traverse(o => {                               // o vidro da cabine diz para que lado é a frente
+        const mats = o.isMesh ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+        if (mats.some(x => /glass/i.test(x.name)) && !o.geometry.groups.length) { const cv = new T.Box3().setFromObject(o).getCenter(new V3()).sub(meio); cv.y = 0; if (cv.length() > 0.2) frente = cv.normalize(); }
+      });
+      const e = CARRO.comprimento / Math.max(tam.x, tam.z), suporte = new T.Group();
+      m.position.set(-meio.x, -caixa.min.y, -meio.z); suporte.add(m); suporte.scale.setScalar(e); suporte.rotation.y = Math.atan2(frente.x, -frente.z);
+      g.add(suporte);
+      if (gltf.animations && gltf.animations.length) { c.mixer = new T.AnimationMixer(m); for (const a of gltf.animations) c.mixer.clipAction(a).play(); }
+    } else {
+      const aco = G.mats.get("steel_dark"), cor = G.mats.get("paint_grey"), pneu = G.mats.get("tire") || aco;
+      const p = (mat, w, h, d, x, y, z) => { const o = new T.Mesh(new T.BoxGeometry(w, h, d), mat); o.position.set(x, y, z); o.castShadow = true; g.add(o); };
+      p(cor, 2.1, 0.9, 4.3, 0, 0.95, 0); p(cor, 2.0, 0.75, 1.5, 0, 1.75, -1.1); p(aco, 2.14, 0.25, 4.34, 0, 0.5, 0);
+      for (const [x, z] of [[-1.05, -1.4], [1.05, -1.4], [-1.05, 1.4], [1.05, 1.4]]) { const r = new T.Mesh(new T.CylinderGeometry(0.42, 0.42, 0.3, 16), pneu); r.rotation.z = Math.PI / 2; r.position.set(x, 0.42, z); g.add(r); }
+    }
+    g.visible = visivel; G.scene.add(g);
+  }
+  function arrumarCarro() {                     // anfitrião: se o motorista saiu, o primeiro jogador que sobrou assume o volante
+    const c = mp.carro;
+    if (!c.oc[0] || !mp.jogadores.has(c.oc[0])) { const k = c.oc.findIndex((o, i) => i > 0 && o && mp.jogadores.has(o)); if (k > 0) { c.oc[0] = c.oc[k]; c.oc[k] = null; } }
+    paraTodos({ t: "carro", oc: c.oc });
+  }
+  function tirarDoCarro(quem) {                 // anfitrião
+    const k = mp.carro.oc.indexOf(quem); if (k < 0) return;
+    mp.carro.oc[k] = null; arrumarCarro();
+  }
+  // anfitrião: o refém sobe no carro com quem ele segue (se houver lugar) e desce quando essa pessoa desce
+  function refemNoCarro(r, dt, ia) {
+    const c = mp.carro, eu_ = "r" + r.i, k = c.oc.indexOf(eu_), liderDentro = r.estado === 1 && c.oc.indexOf(r.lider) >= 0;
+    if (!c.pos) return false;
+    if (k < 0) {
+      if (!liderDentro || Math.hypot(r.pos.x - c.pos.x, r.pos.z - c.pos.z) > CARRO.alcance + 1) return false;
+      const livre = c.oc.indexOf(null); if (livre < 1) return false;
+      c.oc[livre] = eu_; arrumarCarro(); return true;
+    }
+    if (!liderDentro) {                          // desce ao lado do carro
+      c.oc[k] = null; arrumarCarro();
+      const lp = r.estado === 1 && mp.jogadores.get(r.lider) ? posDe(mp.jogadores.get(r.lider)) : c.pos;
+      r.pos.set(lp.x + 0.8, 0, lp.z + 0.8); r.vel.set(0, 0, 0); r.trilha.length = 0;
+      return false;
+    }
+    lugarDoCarro(k, r.pos); r.vel.set(0, 0, 0); r.noChao = true; r.trilha.length = 0;
+    atirarRefem(r, dt, ia); tentarSalvar(r);
+    if (r.estado !== 1) { c.oc[k] = null; arrumarCarro(); }
+    return true;
+  }
+  // todo quadro: quem dirige move o carro; os outros acompanham; quem está dentro fica preso ao seu lugar
+  function carroLocal(dt) {
+    const c = mp.carro, p = G.player, inp = G.input; if (!c.pos || !c.malha) return;
+    const lugar = p.alive ? c.oc.indexOf(mp.meuId) : -1;
+    if (lugar === 0 && mp.fase === "valendo") {
+      const teto = inp.sprint || mp.correr ? CARRO.corre : CARRO.anda, quer = inp.move.y > 0.2 ? teto : inp.move.y < -0.2 ? -CARRO.re : 0;
+      c.vel += (quer - c.vel) * Math.min(1, 2.5 * dt);
+      const yaw = c.yaw - inp.move.x * CARRO.giro * dt * Math.max(-1, Math.min(1, c.vel / 2.5));
+      const x = c.pos.x - Math.sin(yaw) * c.vel * dt, z = c.pos.z - Math.cos(yaw) * c.vel * dt;
+      if (carroCabe(x, z, yaw)) { c.pos.set(x, 0, z); c.yaw = yaw; } else c.vel = 0;         // bateu: para
+    } else if (c.alvo && c.oc[0] !== mp.meuId) {
+      const q = Math.min(1, 10 * dt); let d = c.alvoYaw - c.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+      const antes = c.pos.clone(); c.pos.lerp(c.alvo, q); c.yaw += d * q; c.vel = dt > 0 ? antes.distanceTo(c.pos) / dt : 0;
+    } else c.vel += (0 - c.vel) * Math.min(1, 4 * dt);
+    c.malha.position.copy(c.pos); c.malha.rotation.y = c.yaw;
+    if (c.mixer) c.mixer.update(dt * c.vel * 0.35);
+    if (lugar >= 0) {                            // sentado: preso ao lugar, sem andar; pode olhar e atirar
+      lugarDoCarro(lugar, p.pos); p.vel.set(0, 0, 0); inp.move.x = 0; inp.move.y = 0; mp.quedaTopo = p.pos.y;
+      G.hud.message(lugar === 0 ? "Dirigindo · W/S anda · A/D vira · C corre · F sai" : "No carro · F sai", 0.3);
+    } else if (p.alive && mp.fase === "valendo" && Math.hypot(p.pos.x - c.pos.x, p.pos.z - c.pos.z) < CARRO.alcance && p.pos.y < 1.5) G.hud.message("F — entrar no carro", 0.3);
+  }
+  window.addEventListener("keydown", ev => {
+    if (ev.code !== "KeyF" || ev.repeat || !emRodada() || mp.fase !== "valendo" || !G.player.alive || !mp.carro.pos || (tela && !tela.hidden)) return;
+    const c = mp.carro, p = G.player, dentro = c.oc.indexOf(mp.meuId) >= 0;
+    if (!dentro) { if (Math.hypot(p.pos.x - c.pos.x, p.pos.z - c.pos.z) < CARRO.alcance && p.pos.y < 1.5) enviar({ t: "carroQuer", entrar: 1 }); return; }
+    enviar({ t: "carroQuer", entrar: 0 });
+    if (!mp.anfitriao) c.oc = c.oc.map(o => o === mp.meuId ? null : o);       // já sai aqui; o anfitrião confirma em seguida
+    for (const lado of [1.9, -1.9, 2.8, -2.8]) {                             // desce do lado que estiver livre
+      const x = c.pos.x + Math.cos(c.yaw) * lado, z = c.pos.z - Math.sin(c.yaw) * lado;
+      if (!G.physics.boxes.some(b => x > b.min.x - 0.35 && x < b.max.x + 0.35 && z > b.min.z - 0.35 && z < b.max.z + 0.35 && b.max.y > 0.3 && b.min.y < 1.8)) { p.pos.set(x, 0.05, z); break; }
+    }
+    p.vel.set(0, 0, 0); mp.quedaTopo = p.pos.y;
   });
 
   /* ---------------------------------------------------------------- pichação */
@@ -2376,6 +2528,7 @@
       if (mp.fase === "valendo" && !mp.anfitriao) mp.tempo -= dt;
       if (j) { j.vivo = p.alive && j.vivo; j.pos.copy(p.pos); j.cur.copy(p.pos); j.yaw = p.yaw; j.pitch = p.pitch; j.agachado = p.crouching; }
       mp.picharT -= dt;
+      carroLocal(dt);
       movimentoEspecial(dt);
       armasLocais(dt);
       if (pertoDaPorta()) { G.hud.setPrompt(null); portas(dt); }       // colado na porta, ela tem prioridade sobre o refém
@@ -2386,10 +2539,12 @@
       mp.envioT -= dt;
       if (mp.envioT <= 0) {
         mp.envioT = 1 / 30;      // 30 atualizações por segundo entre os jogadores
-        if (j) enviar({ t: "estado", p: arr(p.pos), y: +p.yaw.toFixed(3), x: +p.pitch.toFixed(3), c: mp.deitarManual ? 2 : p.crouching ? 1 : 0, v: j.vivo ? 1 : 0, a: (mp.colete ? 1 : 0) | (mp.capacete ? 2 : 0) });
+        if (j) enviar({ t: "estado", p: arr(p.pos), y: +p.yaw.toFixed(3), x: +p.pitch.toFixed(3), c: mp.deitarManual ? 2 : p.crouching ? 1 : 0, v: j.vivo ? 1 : 0, a: (mp.colete ? 1 : 0) | (mp.capacete ? 2 : 0),
+          k: mp.carro.oc[0] === mp.meuId && mp.carro.pos ? [+mp.carro.pos.x.toFixed(2), +mp.carro.pos.z.toFixed(2), +mp.carro.yaw.toFixed(3)] : undefined });
         if (mp.anfitriao) paraTodos({ t: "estados", tempo: +mp.tempo.toFixed(1),
           j: [...mp.jogadores.values()].map(x => [x.id, ...arr(x.pos), +x.yaw.toFixed(3), +x.pitch.toFixed(3), x.noChao ? 2 : x.agachado ? 1 : 0, x.vivo ? 1 : 0, x.armadura | 0]),
           r: mp.refens.map(r => [...arr(r.pos), r.estado, r.lider, r.prot | 0]),
+          k: mp.carro.pos ? [+mp.carro.pos.x.toFixed(2), +mp.carro.pos.z.toFixed(2), +mp.carro.yaw.toFixed(3)] : null,
           m: G.enemies.list.filter(e => e.alive).map(e => [e.id, e.type === "hound" ? 1 : 0, ...arr(e.pos), +(e.yaw || 0).toFixed(2)]) }, mp.meuId);
       }
       mp.placarT -= dt;
