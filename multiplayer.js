@@ -90,6 +90,15 @@
   // Quem entra primeiro fica com ele para o seu time; o outro time só entra quando o carro estiver vazio.
   // DESLIGADO a pedido (ligado: false): o carro não aparece nas rodadas. Para voltar, troque para ligado: true.
   const CARRO = { ligado: false, lugares: [[-0.5, 0.72, -1.25], [0.5, 0.72, -1.25], [-0.6, 2.08, 0.6], [0, 2.08, 1.25], [0.6, 2.08, 0.6]], alcance: 3.4, anda: 3.8, corre: 7.6, re: 3, giro: 1.8, comprimento: 4.4 };
+  // bots: o anfitrião completa cada time até porTime com jogadores controlados pelo computador. Eles só combatem
+  // (não soltam nem levam refém) e ficam mais duros e mais certeiros conforme a dificuldade da sala.
+  const BOTS = { porTime: 5, visao: 45, vel: 3.6, nomes: ["Brasa", "Tigre", "Zulu", "Corvo", "Farol", "Lince", "Rato", "Vespa", "Trovão", "Jacaré", "Onça", "Cobra"],
+    niveis: {
+      facil:   { vida: 55,  precisao: 0.16, cadencia: 1.2,  dano: 9 },
+      medio:   { vida: 100, precisao: 0.28, cadencia: 0.85, dano: 13 },
+      dificil: { vida: 150, precisao: 0.42, cadencia: 0.6,  dano: 17 },
+      treta:   { vida: 200, precisao: 0.58, cadencia: 0.42, dano: 21 },
+    } };
   const QUEDA = { altura: 3.2, dano: 0.5 };     // cair de mais que isso tira metade da vida (só de jogador; refém não se machuca)
   const MESA = [-13.9, -12.1, -26.68];                                  // mesa encostada na parede norte: x de, x até, z da frente
   // quem são os reféns, na ordem das posições acima: cor da roupa, cabelo, tamanho e ritmo de caminhada
@@ -220,7 +229,7 @@
     });
     peer.on("connection", con => {
       con.on("open", () => {
-        if (mp.jogadores.size >= CFG.maxJogadores) { con.send({ t: "recusa", motivo: "A sala está cheia." }); return setTimeout(() => con.close(), 500); }
+        if ([...mp.jogadores.values()].filter(x => !x.bot).length >= CFG.maxJogadores) { con.send({ t: "recusa", motivo: "A sala está cheia." }); return setTimeout(() => con.close(), 500); }
         mp.cons.set(con.peer, con);
       });
       con.on("data", msg => { if (msg && typeof msg === "object") doJogador(con.peer, msg); });
@@ -282,7 +291,8 @@
       case "acerto": {
         const alvo = mp.jogadores.get(m.em);
         if (mp.fase === "valendo" && alvo && alvo.vivo && j.vivo && alvo.time !== j.time)
-          paraUm(alvo.id, { t: "dano", q: Math.min(600, +m.q || 0), de: m.de, por: id, c: m.c === 1 ? 1 : m.c === 0 ? 0 : undefined });
+          if (alvo.bot) ferirBot(alvo, Math.min(600, +m.q || 0), id);
+          else paraUm(alvo.id, { t: "dano", q: Math.min(600, +m.q || 0), de: m.de, por: id, c: m.c === 1 ? 1 : m.c === 0 ? 0 : undefined });
         break;
       }
       case "acertoRefem":
@@ -367,7 +377,7 @@
   }
   function mandarLobby() {
     paraTodos({ t: "lobby", fase: mp.fase, placar: mp.placar, rodada: mp.rodada, dificuldade: mp.dificuldade,
-      jogadores: [...mp.jogadores.values()].map(j => ({ id: j.id, nome: j.nome, time: j.time })) });
+      jogadores: [...mp.jogadores.values()].map(j => ({ id: j.id, nome: j.nome, time: j.time, bot: j.bot ? 1 : 0 })) });
   }
 
   /* ----------------------------------------------- mensagens: anfitrião -> jogador */
@@ -382,7 +392,7 @@
         for (const d of m.jogadores) {
           vistos.add(d.id);
           const j = mp.jogadores.get(d.id) || novoJogador(d.id, d.nome);
-          j.nome = d.nome; j.time = d.time;
+          j.nome = d.nome; j.time = d.time; if (!mp.anfitriao) j.bot = !!d.bot;
         }
         for (const [id, j] of mp.jogadores) if (!vistos.has(id)) { removerBoneco(j); mp.jogadores.delete(id); }
         mp.placar = m.placar; mp.rodada = m.rodada; mp.dificuldade = m.dificuldade;
@@ -567,7 +577,7 @@
   function desenharLobby() {
     if (mp.fase !== "lobby" || !mp.ativo) return;
     const lista = t => [...mp.jogadores.values()].filter(j => j.time === t)
-      .map(j => `<li>${esc(j.nome)}${j.id === mp.meuId ? " <em>você</em>" : ""}${j.id === "anfitriao" ? " <em>anfitrião</em>" : ""}</li>`).join("") || "<li class='mp-vazio'>ninguém ainda</li>";
+      .map(j => `<li>${esc(j.nome)}${j.id === mp.meuId ? " <em>você</em>" : ""}${j.id === "anfitriao" ? " <em>anfitrião</em>" : ""}${j.bot ? " <em>bot</em>" : ""}</li>`).join("") || "<li class='mp-vazio'>ninguém ainda</li>";
     const meu = eu() && eu().time;
     const local = location.protocol === "file:" || /^(localhost|127\.|\[::1\])/.test(location.host);
     const emAndamento = !mp.anfitriao && mp.faseAnfitriao && mp.faseAnfitriao !== "lobby";
@@ -593,6 +603,7 @@
         <li><b>Lugares altos</b> Vários containers, o telhado do galpão e um mirante na torre do guindaste têm escada de mão. Para descer: olhe para baixo e aperte W.</li>
         <li><b>Armas</b> Todos nascem com a faca. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
         <li><b>Explosivos</b> Pegue passando por cima. 4 joga a granada; B arma a bomba no chão onde você está; V arma a bomba-relógio (T muda o tempo). Qualquer um desarma segurando E perto dela.</li>
+        <li><b>Bots</b> Cada time é completado com bots até ficar com 5. Eles só combatem, não mexem nos reféns, e ficam mais difíceis conforme a dificuldade da sala.</li>
         <li><b>Placar</b> Segure Tab para ver quem está vivo, os abates e as vitórias de cada time.</li>
         <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q troca de arma (1 arma, 2 pistola, 3 faca) · 4 granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
         <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura metade de um tiro no corpo; o capacete salva de um tiro na cabeça. Cada um aguenta um tiro só.</li>
@@ -631,7 +642,7 @@
   /* ------------------------------------------------------------------ rodadas */
   function novoJogador(id, nome) {
     const j = { id, nome, time: null, vivo: false, naRodada: false, pos: new V3(0, -50, 0), cur: new V3(0, -50, 0), yaw: 0, pitch: 0, agachado: false, boneco: null, alvo: null };
-    const n = t => [...mp.jogadores.values()].filter(x => x.time === t).length;
+    const n = t => [...mp.jogadores.values()].filter(x => x.time === t && !x.bot).length;      // os bots se ajustam depois
     j.time = n("p") <= n("t") ? "p" : "t";          // entra no time com menos gente
     if (id !== mp.meuId) j.alvo = criarAlvo(j);
     mp.jogadores.set(id, j);
@@ -670,14 +681,21 @@
   // só o anfitrião
   function novaRodada() {
     mp.rodada++; mp.fase = "preparo"; mp.tempo = dif().tempo;
+    completarComBots();
     const nasc = {};
     for (const t of ["p", "t"]) {
-      const time = [...mp.jogadores.values()].filter(j => j.time === t), pts = pontosDeNascimento(t, time.length);
-      time.forEach((j, k) => { nasc[j.id] = pts[k]; j.vivo = true; j.naRodada = true; j.pos.set(pts[k][0], 0, pts[k][2]); j.cur.copy(j.pos); });
+      const time = [...mp.jogadores.values()].filter(j => j.time === t).sort((a, b) => (a.bot ? 1 : 0) - (b.bot ? 1 : 0)), pts = pontosDeNascimento(t, time.length);      // gente primeiro
+      time.forEach((j, k) => {
+        let pt = pts[k];
+        if (j.bot && pt[1] > 1) { const q = pisavel(BASE_POLICIA[0] + (Math.random() - 0.5) * 6, BASE_POLICIA[1] + (Math.random() - 0.5) * 6); pt = [q[0], 0, q[1], pt[3]]; }      // bot não nasce na sala dos reféns
+        nasc[j.id] = pt; j.vivo = true; j.naRodada = true; j.pos.set(pt[0], j.bot ? pt[1] : 0, pt[2]); j.cur.copy(j.pos);
+        if (j.bot) { j.hp = (BOTS.niveis[mp.dificuldade] || BOTS.niveis.medio).vida; j.yaw = pt[3] || 0; j.vel.set(0, 0, 0); j.noChao = true; j.ia = { pensarT: Math.random() * 0.4, alvo: null, visto: false, dist: 99, caminho: null, caminhoT: 0, tiroT: 1 + Math.random(), ladoT: 0, lado: 1 }; }
+      });
     }
     try { G.enemies.clear(); } catch {}
     paraTodos({ t: "rodada", n: mp.rodada, placar: mp.placar, nasc, dificuldade: mp.dificuldade, itens: sortearItens(), armas: sortearArmas(nasc), carro: sortearCarro() });
     mandarLobby();
+    for (const j of mp.jogadores.values()) if (j.bot) j.arma = j.time + "_fuzil";
     const r = RESGATES[Math.floor(Math.random() * RESGATES.length)], q = pisavel(r[0], r[1]);
     mp.resgate = new V3(q[0], 0, q[1]);
     for (const j of mp.jogadores.values()) if (j.time === "p") paraUm(j.id, { t: "resgate", p: q, nome: r[2] });   // só os Policiais ficam sabendo
@@ -692,7 +710,7 @@
     mp.ouvirT -= dt;
     if (mp.fase === "valendo") {
       mp.tempo -= dt;
-      moverRefens(dt); explosivosDoAnfitriao(dt);
+      moverRefens(dt); moverBots(dt); explosivosDoAnfitriao(dt);
       const conta = t => { let total = 0, vivos = 0; for (const j of mp.jogadores.values()) if (j.time === t && j.naRodada) { total++; if (j.vivo) vivos++; } return { total, vivos }; };
       const pol = conta("p"), ter = conta("t");
       if (mp.fase !== "valendo") return;
@@ -784,7 +802,7 @@
   function criarAlvo(j) {      // o que as máquinas do anfitrião enxergam no lugar de um jogador remoto
     return { pos: j.cur, eye: new V3(), vel: new V3(), forward: new V3(0, 0, -1), yaw: 0, pitch: 0, alive: false, crouching: false,
       speed: 0, health: 100, maxHealth: 100, onGround: true, enabled: true,
-      damage(q, de) { if (mp.fase === "valendo" && j.vivo) paraUm(j.id, { t: "dano", q, de: de ? arr(de) : null, por: null }); },
+      damage(q, de) { if (mp.fase === "valendo" && j.vivo) { if (j.bot) ferirBot(j, q, null); else paraUm(j.id, { t: "dano", q, de: de ? arr(de) : null, por: null }); } },
       heal() {}, addShake() {}, addRecoil() {} };
   }
   // Monta uma pessoa: pernas com joelho, tronco com cintura, braços com cotovelo, cabeça com rosto, cabelo e roupa.
@@ -1455,7 +1473,7 @@
     const acertou = Math.random() < ia.precisao * (dist < 10 ? 1.4 : dist > 20 ? 0.6 : 1), fim = alvo.peito.clone();
     if (!acertou) fim.add(new V3((Math.random() - 0.5) * 2.4, (Math.random() - 0.2) * 1.6, (Math.random() - 0.5) * 2.4));
     paraTodos({ t: "tiro", id: "refem", o: arr(olho), e: arr(fim) });
-    if (acertou) paraUm(alvo.j.id, { t: "dano", q: ia.dano, de: arr(r.pos), por: "refem", c: 0 });
+    if (acertou) ferirJogador(alvo.j, ia.dano, r.pos, "refem");
   }
   // anfitrião: o refém preso fica parado no lugar; o solto segue quem o soltou, desvia de quem mira nele e atira
   function moverRefens(dt) {
@@ -1970,6 +1988,76 @@
     G.hud.message("Super poder ativado", 3);
   });
 
+  /* -------------------------------------------------------------------- bots */
+  // anfitrião, no começo de cada rodada: cria ou tira bots para cada time ficar com BOTS.porTime
+  function completarComBots() {
+    for (const t of ["p", "t"]) {
+      const gente = [...mp.jogadores.values()].filter(j => j.time === t && !j.bot).length, bots = [...mp.jogadores.values()].filter(j => j.time === t && j.bot);
+      let falta = Math.max(0, BOTS.porTime - gente) - bots.length;
+      for (; falta > 0; falta--) {
+        const id = "bot-" + (mp.proxBot = (mp.proxBot || 0) + 1), usados = new Set([...mp.jogadores.values()].map(j => j.nome));
+        const nome = BOTS.nomes.find(n => !usados.has(n)) || "Bot " + mp.proxBot;
+        const j = { id, nome, time: t, bot: true, vivo: false, naRodada: false, pos: new V3(0, -50, 0), cur: new V3(0, -50, 0), vel: new V3(), yaw: 0, pitch: 0, agachado: false, boneco: null, alvo: null, hp: 100, ia: {} };
+        j.alvo = criarAlvo(j); mp.jogadores.set(id, j);
+      }
+      for (; falta < 0; falta++) { const b = bots.pop(); removerBoneco(b); mp.jogadores.delete(b.id); }
+    }
+  }
+  function ferirBot(b, q, por) {                // anfitrião
+    if (!b.vivo || mp.fase !== "valendo") return;
+    b.hp -= q;
+    if (b.hp <= 0) { b.vivo = false; paraTodos({ t: "baixa", quem: b.id, por: por || null }); }
+  }
+  function ferirJogador(j, q, de, por) {        // anfitrião: tiro de bot ou de refém em jogador (gente ou bot)
+    if (j.bot) ferirBot(j, q, por); else paraUm(j.id, { t: "dano", q, de: arr(de), por, c: 0 });
+  }
+  // anfitrião, todo quadro: cada bot procura o inimigo vivo mais perto, vai até ele pelo caminho do mapa,
+  // e quando o vê para, anda de lado e atira
+  function moverBots(dt) {
+    const cfg = BOTS.niveis[mp.dificuldade] || BOTS.niveis.medio;
+    for (const b of mp.jogadores.values()) {
+      if (!b.bot || !b.vivo) continue;
+      const ia = b.ia;
+      ia.pensarT -= dt;
+      if (ia.pensarT <= 0) {
+        ia.pensarT = 0.35 + Math.random() * 0.2; ia.alvo = null; ia.visto = false; let melhor = 1e9;
+        for (const j of mp.jogadores.values()) { if (!j.vivo || j.time === b.time) continue; const d = posDe(j).distanceTo(b.pos); if (d < melhor) { melhor = d; ia.alvo = j; } }
+        if (ia.alvo) {
+          const p = posDe(ia.alvo); ia.dist = melhor;
+          if (melhor < BOTS.visao) try { ia.visto = G.physics.lineOfSight(new V3(b.pos.x, b.pos.y + 1.55, b.pos.z), new V3(p.x, p.y + 1.2, p.z)); } catch {}
+          if (ia.visto && melhor < 16) ia.caminho = null;
+          else if ((ia.caminhoT -= 0.45) <= 0 || !ia.caminho) { ia.caminhoT = 1.6; try { ia.caminho = G.physics.nav.findPath(b.pos, new V3(p.x, 0, p.z)); } catch { ia.caminho = null; } }
+        }
+      }
+      let wx = 0, wz = 0;
+      if (ia.caminho && ia.caminho.length) {
+        const w = ia.caminho[0], dx = w.x - b.pos.x, dz = w.z - b.pos.z, d = Math.hypot(dx, dz);
+        if (d < 0.6) ia.caminho.shift(); else { wx = dx / d; wz = dz / d; }
+      } else if (ia.visto && ia.alvo) {            // em combate: passos de lado
+        ia.ladoT -= dt;
+        if (ia.ladoT <= 0) { ia.ladoT = 0.8 + Math.random(); ia.lado = Math.random() < 0.5 ? 1 : -1; }
+        const p = posDe(ia.alvo), dx = p.x - b.pos.x, dz = p.z - b.pos.z, d = Math.hypot(dx, dz) || 1;
+        wx = -dz / d * ia.lado * 0.55; wz = dx / d * ia.lado * 0.55;
+      }
+      b.vel.x = wx * BOTS.vel; b.vel.z = wz * BOTS.vel; b.vel.y -= 20 * dt;
+      let res = null; try { res = G.physics.moveCapsule(b.pos, b.vel, dt, 0.3, 1.7, b.noChao); } catch {}
+      b.noChao = !res || !!res.onGround;
+      if (b.noChao && b.vel.y < 0) b.vel.y = 0;
+      if (b.pos.y < -1) { b.pos.y = 0; b.vel.y = 0; }
+      if (ia.visto && ia.alvo) { const p = posDe(ia.alvo); b.yaw = Math.atan2(-(p.x - b.pos.x), -(p.z - b.pos.z)); b.pitch = Math.atan2(p.y - b.pos.y, ia.dist || 1) * 0.8; }
+      else if (wx || wz) { b.yaw = Math.atan2(-wx, -wz); b.pitch = 0; }
+      ia.tiroT -= dt;
+      if (ia.visto && ia.alvo && ia.alvo.vivo && ia.tiroT <= 0) {
+        ia.tiroT = cfg.cadencia * (0.7 + Math.random() * 0.6);
+        const p = posDe(ia.alvo), olho = new V3(b.pos.x, b.pos.y + 1.5, b.pos.z), fim = new V3(p.x, p.y + 1.2, p.z);
+        const acertou = Math.random() < cfg.precisao * (ia.dist < 12 ? 1.3 : ia.dist > 28 ? 0.6 : 1);
+        if (!acertou) fim.add(new V3((Math.random() - 0.5) * 2.4, (Math.random() - 0.2) * 1.6, (Math.random() - 0.5) * 2.4));
+        paraTodos({ t: "tiro", id: b.id, o: arr(olho), e: arr(fim) });
+        if (acertou) ferirJogador(ia.alvo, cfg.dano, b.pos, b.id);
+      }
+    }
+  }
+
   /* ------------------------------------------------------------------- carro */
   // lugar no mundo de um assento do carro
   function lugarDoCarro(k, alvo) {
@@ -2244,6 +2332,7 @@
   }
   function explodir(pos, cfg, por) {            // anfitrião: avisa todos e fere máquinas e reféns
     paraTodos({ t: "explosao", p: arr(pos), raio: cfg.raio, dano: cfg.dano, por });
+    for (const b of [...mp.jogadores.values()]) if (b.bot && b.vivo) { const d = b.pos.distanceTo(pos); if (d < cfg.raio) ferirBot(b, cfg.dano * (1 - d / cfg.raio), por); }
     for (const e of G.enemies.list) {
       const d = e.pos.distanceTo(pos);
       if (e.alive && d < cfg.raio) try { e.damage(cfg.dano * (1 - d / cfg.raio), e.pos.clone(), e.pos.clone().sub(pos).normalize(), "body"); } catch {}
