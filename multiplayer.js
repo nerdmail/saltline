@@ -919,7 +919,12 @@
       for (const x of [-0.118, 0.118]) { const j = malha(new T.BoxGeometry(0.012, 0.12, 0.03), pano(0x15171a)); j.position.set(x, -0.06, 0); capaceteM.add(j); }
       por("Head", capaceteM, 0, C.cabeca + 0.085, 0.01); capaceteM.visible = false;
     }
-    const pivo = new T.Group(); pivo.position.set(0, 1.4, -0.02); modelo.add(pivo);          // a arma gira aqui, na altura do ombro
+    // a arma gira num ponto na altura do ombro, preso ao tronco do esqueleto: assim ela (e os braços que a seguram)
+    // acompanha o balanço da animação em vez de ficar dura no lugar
+    const suporte = new T.Group(); suporte.position.set(0, 1.4, -0.02); modelo.add(suporte);
+    const troncoOsso = ossos.Spine2 || ossos.Spine1 || ossos.Spine;
+    if (troncoOsso) { grupo.updateMatrixWorld(true); troncoOsso.attach(suporte); }
+    const pivo = new T.Group(); suporte.add(pivo);
     const lado = 1, arma = new T.Group(); arma.position.set(fonte === civilModelo ? 0.06 : 0.15, fonte === civilModelo ? -0.05 : -0.1, -0.38); pivo.add(arma);   // a arma fica à direita do corpo (no civil, mais ao centro, para as duas mãos)
     let placa = null;
     if (time) { placa = criarPlaca(nome, css); placa.position.y = 2.05; grupo.add(placa); }
@@ -2097,17 +2102,18 @@
         if (d < 0.6) ia.caminho.shift(); else { wx = dx / d; wz = dz / d; }
       } else if (ia.visto && ia.alvo) {            // em combate: passos de lado
         ia.ladoT -= dt;
-        if (ia.ladoT <= 0) { ia.ladoT = 0.8 + Math.random(); ia.lado = Math.random() < 0.5 ? 1 : -1; }
+        if (ia.ladoT <= 0) { ia.ladoT = 1.4 + Math.random() * 1.8; ia.lado = Math.random() < 0.3 ? 0 : Math.random() < 0.5 ? 1 : -1; }      // às vezes fica parado atirando
         const p = posDe(ia.alvo), dx = p.x - b.pos.x, dz = p.z - b.pos.z, d = Math.hypot(dx, dz) || 1;
-        wx = -dz / d * ia.lado * 0.55; wz = dx / d * ia.lado * 0.55;
+        wx = -dz / d * ia.lado * 0.4; wz = dx / d * ia.lado * 0.4;
       }
-      b.vel.x = wx * cfg.vel; b.vel.z = wz * cfg.vel; b.vel.y -= 20 * dt;
+      { const q = Math.min(1, 5 * dt); b.vel.x += (wx * cfg.vel - b.vel.x) * q; b.vel.z += (wz * cfg.vel - b.vel.z) * q; }      // acelera e freia aos poucos, sem tranco
+      b.vel.y -= 20 * dt;
       let res = null; try { res = G.physics.moveCapsule(b.pos, b.vel, dt, 0.3, 1.7, b.pisando); } catch {}
       b.pisando = !res || !!res.onGround;
       if (b.pisando && b.vel.y < 0) b.vel.y = 0;
       if (b.pos.y < -1) { b.pos.y = 0; b.vel.y = 0; }
       if (ia.visto && ia.alvo) { const p = posDe(ia.alvo); b.yaw = Math.atan2(-(p.x - b.pos.x), -(p.z - b.pos.z)); b.pitch = Math.atan2(p.y + meioDoCorpo(ia.alvo) - (b.pos.y + 1.4), ia.dist || 1); }
-      else { if (wx || wz) b.yaw = Math.atan2(-wx, -wz); b.pitch = 0; }
+      else { if (Math.hypot(b.vel.x, b.vel.z) > 0.4) b.yaw = Math.atan2(-b.vel.x, -b.vel.z); b.pitch = 0; }      // olha para onde está indo de fato
       ia.tiroT -= dt;
       if (ia.visto && ia.alvo && ia.alvo.vivo && ia.tiroT <= 0) {
         ia.tiroT = cfg.cadencia * (0.7 + Math.random() * 0.6);
