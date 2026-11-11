@@ -92,13 +92,13 @@
   const CARRO = { ligado: false, lugares: [[-0.5, 0.72, -1.25], [0.5, 0.72, -1.25], [-0.6, 2.08, 0.6], [0, 2.08, 1.25], [0.6, 2.08, 0.6]], alcance: 3.4, anda: 3.8, corre: 7.6, re: 3, giro: 1.8, comprimento: 4.4 };
   // bots: o anfitrião completa cada time até porTime com jogadores controlados pelo computador. Eles só combatem
   // (não soltam nem levam refém) e ficam mais duros e mais certeiros conforme a dificuldade da sala.
-  const BOTS = { porTime: 5, visao: 45, vel: 3.6, nomes: ["Brasa", "Tigre", "Zulu", "Corvo", "Farol", "Lince", "Rato", "Vespa", "Trovão", "Jacaré", "Onça", "Cobra"],
+  const BOTS = { porTime: 5, visao: 45, ouvePasso: 13, ouveTiro: 38, memoria: 6, vel: 3.6, nomes: ["Brasa", "Tigre", "Zulu", "Corvo", "Farol", "Lince", "Rato", "Vespa", "Trovão", "Jacaré", "Onça", "Cobra"],
     niveis: {
       // movel = quanto da mira sobra quando o alvo está correndo (nos níveis baixos o bot erra mais alvo em movimento)
-      facil:   { vida: 66,  precisao: 0.19, cadencia: 1.0,  dano: 11, vel: 3.4, reflexo: 0.5,  movel: 0.55 },
-      medio:   { vida: 120, precisao: 0.34, cadencia: 0.7,  dano: 16, vel: 4.0, reflexo: 0.33, movel: 0.65 },
-      dificil: { vida: 150, precisao: 0.42, cadencia: 0.6,  dano: 17, vel: 4.5, reflexo: 0.25, movel: 0.8 },
-      treta:   { vida: 200, precisao: 0.58, cadencia: 0.42, dano: 21, vel: 5.2, reflexo: 0.15, movel: 0.9 },
+      facil:   { vida: 66,  precisao: 0.19, cadencia: 1.0,  dano: 11, vel: 3.4, reflexo: 0.5,  movel: 0.55, giro: 2.6 },
+      medio:   { vida: 120, precisao: 0.34, cadencia: 0.7,  dano: 16, vel: 4.0, reflexo: 0.33, movel: 0.65, giro: 3.4 },
+      dificil: { vida: 150, precisao: 0.42, cadencia: 0.6,  dano: 17, vel: 4.5, reflexo: 0.25, movel: 0.8,  giro: 4.6 },
+      treta:   { vida: 200, precisao: 0.58, cadencia: 0.42, dano: 21, vel: 5.2, reflexo: 0.15, movel: 0.9,  giro: 6.5 },
     } };
   const QUEDA = { altura: 3.2, dano: 0.5 };     // cair de mais que isso tira metade da vida (só de jogador; refém não se machuca)
   const MESA = [-13.9, -12.1, -26.68];                                  // mesa encostada na parede norte: x de, x até, z da frente
@@ -286,6 +286,7 @@
         j.vivo = !!m.v; j.armadura = m.a | 0; if (id !== mp.meuId) j.arma = ARMAS[m.w] ? m.w : null;
         break;
       case "tiro":
+        j.tiroEm = performance.now() / 1000;      // os bots ouvem
         paraTodos({ t: "tiro", id, o: m.o, e: m.e }, id);
         if (mp.ouvirT <= 0) { mp.ouvirT = 0.3; try { G.enemies.alert(new V3().fromArray(m.o), G.enemies.TUNE.hearRadius || 40); } catch {} }
         break;
@@ -584,6 +585,7 @@
         <li><b>Lugares altos</b> Vários containers, o telhado do galpão e um mirante na torre do guindaste têm escada de mão. Para descer: olhe para baixo e aperte W.</li>
         <li><b>Armas</b> Todos nascem com a faca. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
         <li><b>Explosivos</b> Pegue passando por cima. 4 joga a granada; B arma a bomba no chão onde você está; V arma a bomba-relógio (T muda o tempo). Qualquer um desarma segurando E perto dela.</li>
+        <li><b>Modo furtivo</b> Com a faca na mão ninguém ouve seus passos, nem os bots. Eles só veem o que está à frente deles; de arma na mão, ouvem você andando por perto e viram.</li>
         <li><b>Bots</b> Quando a partida começa, cada time é completado com bots até ficar com 5 (no máximo 10 na partida). O nome deles começa com "Bot". Eles só combatem, não mexem nos reféns, e ficam mais difíceis conforme a dificuldade da sala.</li>
         <li><b>Quem cai</b> Fica assistindo um jogador vivo até a rodada acabar. A barra de espaço troca de jogador.</li>
         <li><b>Placar</b> Segure Tab para ver quem está vivo, os abates e as vitórias de cada time.</li>
@@ -704,7 +706,7 @@
         let pt = pts[k];
         if (j.bot && pt[1] > 1) { const q = pisavel(BASE_POLICIA[0] + (Math.random() - 0.5) * 6, BASE_POLICIA[1] + (Math.random() - 0.5) * 6); pt = [q[0], 0, q[1], pt[3]]; }      // bot não nasce na sala dos reféns
         nasc[j.id] = pt; j.vivo = true; j.naRodada = true; j.pos.set(pt[0], j.bot ? pt[1] : 0, pt[2]); j.cur.copy(j.pos);
-        if (j.bot) { j.hp = (BOTS.niveis[mp.dificuldade] || BOTS.niveis.medio).vida; j.yaw = pt[3] || 0; j.vel.set(0, 0, 0); j.pisando = true; j.noChao = false; j.ia = { pensarT: Math.random() * 0.4, alvo: null, visto: false, dist: 99, caminho: null, caminhoT: 0, tiroT: 1 + Math.random(), ladoT: 0, lado: 1 }; }
+        if (j.bot) { j.hp = (BOTS.niveis[mp.dificuldade] || BOTS.niveis.medio).vida; j.yaw = pt[3] || 0; j.vel.set(0, 0, 0); j.pisando = true; j.noChao = false; j.ia = { pensarT: Math.random() * 0.4, alvo: null, visto: false, dist: 99, sabe: {}, rondaT: 0, caminho: null, caminhoT: 0, tiroT: 1 + Math.random(), ladoT: 0, lado: 1 }; }
       });
     }
     try { G.enemies.clear(); } catch {}
@@ -2064,29 +2066,47 @@
     return deitado ? 0.3 : agachado ? 0.75 : 1.2;
   }
   function moverBots(dt) {
-    const cfg = BOTS.niveis[mp.dificuldade] || BOTS.niveis.medio;
+    const cfg = BOTS.niveis[mp.dificuldade] || BOTS.niveis.medio, agora = performance.now() / 1000;
+    for (const j of mp.jogadores.values()) {            // quão rápido cada um está andando (para os bots ouvirem passos)
+      const p = posDe(j), v = j.posOuvida ? Math.hypot(p.x - j.posOuvida.x, p.z - j.posOuvida.z) / Math.max(dt, 0.001) : 0;
+      j.rapidez = (j.rapidez || 0) + (Math.min(v, 9) - (j.rapidez || 0)) * Math.min(1, 4 * dt); (j.posOuvida || (j.posOuvida = new V3())).copy(p);
+    }
     for (const b of mp.jogadores.values()) {
       if (!b.bot || !b.vivo) continue;
       const ia = b.ia;
       ia.pensarT -= dt;
       if (ia.pensarT <= 0) {
         ia.pensarT = cfg.reflexo * (0.8 + Math.random() * 0.4);
-        const olho = new V3(b.pos.x, b.pos.y + 1.55, b.pos.z), ve = j => { const p = posDe(j); try { return p.distanceTo(b.pos) < BOTS.visao && G.physics.lineOfSight(olho, new V3(p.x, p.y + meioDoCorpo(j), p.z)); } catch { return false; } };
-        // fica no mesmo alvo até ele cair; só troca se o perdeu de vista há um tempo e há outro inimigo à vista, ou outro bem mais perto
+        const olho = new V3(b.pos.x, b.pos.y + 1.55, b.pos.z), fx = -Math.sin(b.yaw), fz = -Math.cos(b.yaw);
+        // VER: só o que está à frente (campo de visão de uns 150 graus) e sem nada no meio; colado no bot, ele percebe de qualquer lado
+        const ve = j => {
+          const p = posDe(j), dx = p.x - b.pos.x, dz = p.z - b.pos.z, d = Math.hypot(dx, dz);
+          if (d > BOTS.visao) return false;
+          if (d > 1.3 && (dx * fx + dz * fz) / d < 0.26) return false;
+          try { return G.physics.lineOfSight(olho, new V3(p.x, p.y + meioDoCorpo(j), p.z)); } catch { return false; }
+        };
+        // OUVIR: passos de quem anda armado por perto e tiros mais longe. Quem está de faca (ou parado, agachado, deitado) não é ouvido
+        const ouve = j => {
+          const d = posDe(j).distanceTo(b.pos);
+          if (agora - (j.tiroEm || 0) < 1.5 && d < BOTS.ouveTiro) return true;
+          const arma = ARMAS[j.id === mp.meuId ? mp.arma : j.arma];
+          return d < BOTS.ouvePasso && !(arma && arma.faca) && (j.rapidez || 0) > 1.6 && meioDoCorpo(j) > 1;
+        };
         if (ia.alvo && (!ia.alvo.vivo || !mp.jogadores.has(ia.alvo.id))) ia.alvo = null;
         const viaAntes = ia.visto;
-        ia.visto = !!ia.alvo && ve(ia.alvo);
-        ia.semVerT = ia.visto ? 0 : (ia.semVerT || 0) + ia.pensarT;
-        let perto = null, dPerto = 1e9, aVista = null, dVista = 1e9;
+        ia.visto = false; let melhor = null, dMelhor = 1e9;
         for (const j of mp.jogadores.values()) {
           if (!j.vivo || j.time === b.time) continue;
-          const d = posDe(j).distanceTo(b.pos);
-          if (d < dPerto) { dPerto = d; perto = j; }
-          if (d < dVista && j !== ia.alvo && ve(j)) { dVista = d; aVista = j; }
+          const v = ve(j);
+          if (v || ouve(j)) ia.sabe[j.id] = agora;                          // percebeu este inimigo agora
+          if (j === ia.alvo) ia.visto = v;
+          if (agora - (ia.sabe[j.id] || -99) > BOTS.memoria) continue;      // não sabe (ou já esqueceu) onde ele está
+          const d = posDe(j).distanceTo(b.pos) * (v ? 1 : 1.6);             // prefere quem está vendo
+          if (d < dMelhor) { dMelhor = d; melhor = j; }
         }
-        const dAlvo = ia.alvo ? posDe(ia.alvo).distanceTo(b.pos) : 1e9;
-        if (!ia.alvo) { ia.alvo = aVista || perto; ia.caminho = null; ia.semVerT = 0; ia.visto = !!ia.alvo && ia.alvo === aVista; }
-        else if (aVista && ((!ia.visto && ia.semVerT > 3) || dVista < dAlvo * 0.5)) { ia.alvo = aVista; ia.caminho = null; ia.semVerT = 0; ia.visto = true; }
+        // fica no mesmo alvo enquanto souber dele; troca se o esqueceu ou se outro percebido está bem mais perto
+        const sabeDoAlvo = ia.alvo && agora - (ia.sabe[ia.alvo.id] || -99) <= BOTS.memoria;
+        if (!sabeDoAlvo || (melhor && melhor !== ia.alvo && dMelhor < posDe(ia.alvo).distanceTo(b.pos) * 0.5)) { ia.alvo = melhor; ia.caminho = null; ia.visto = !!melhor && ve(melhor); }
         if (ia.visto && !viaAntes) ia.tiroT = Math.min(ia.tiroT, cfg.reflexo * 0.6);      // entrou na linha de visão: atira logo
         if (ia.alvo) {
           const p = posDe(ia.alvo); ia.dist = p.distanceTo(b.pos);
@@ -2094,6 +2114,9 @@
           ia.ultAlvo = ia.alvo.id; ia.ultPos = p.clone(); ia.ar = Math.abs(p.y - (ia.ultY ?? p.y)) > 0.25; ia.ultY = p.y;
           if (ia.visto && ia.dist < 9) ia.caminho = null;                    // perto e à vista: para de avançar e luta
           else if ((ia.caminhoT -= ia.pensarT) <= 0 || !ia.caminho || !ia.caminho.length) { ia.caminhoT = 1.2; try { ia.caminho = G.physics.nav.findPath(b.pos, new V3(p.x, 0, p.z)); } catch { ia.caminho = null; } }
+        } else if (!ia.caminho || !ia.caminho.length || (ia.rondaT -= ia.pensarT) <= 0) {      // ninguém percebido: faz a ronda por pontos sorteados do mapa
+          ia.rondaT = 14;
+          try { ia.caminho = G.physics.nav.findPath(b.pos, G.physics.nav.randomPoint(new V3(0, 0, 0), 34)); } catch { ia.caminho = null; }
         }
       }
       let wx = 0, wz = 0;
@@ -2112,8 +2135,12 @@
       b.pisando = !res || !!res.onGround;
       if (b.pisando && b.vel.y < 0) b.vel.y = 0;
       if (b.pos.y < -1) { b.pos.y = 0; b.vel.y = 0; }
-      if (ia.visto && ia.alvo) { const p = posDe(ia.alvo); b.yaw = Math.atan2(-(p.x - b.pos.x), -(p.z - b.pos.z)); b.pitch = Math.atan2(p.y + meioDoCorpo(ia.alvo) - (b.pos.y + 1.4), ia.dist || 1); }
-      else { if (Math.hypot(b.vel.x, b.vel.z) > 0.4) b.yaw = Math.atan2(-b.vel.x, -b.vel.z); b.pitch = 0; }      // olha para onde está indo de fato
+      let yawAlvo = b.yaw; b.pitch = 0;
+      if (ia.alvo && (ia.visto || agora - (ia.sabe[ia.alvo.id] || -99) < 1.5)) {      // vê o alvo, ou acabou de ouvi-lo: vira para ele
+        const p = posDe(ia.alvo); yawAlvo = Math.atan2(-(p.x - b.pos.x), -(p.z - b.pos.z));
+        if (ia.visto) b.pitch = Math.atan2(p.y + meioDoCorpo(ia.alvo) - (b.pos.y + 1.4), ia.dist || 1);
+      } else if (Math.hypot(b.vel.x, b.vel.z) > 0.4) yawAlvo = Math.atan2(-b.vel.x, -b.vel.z);      // senão olha para onde está indo
+      { let dy = yawAlvo - b.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); const passo = cfg.giro * dt; b.yaw += Math.max(-passo, Math.min(passo, dy)); }      // vira aos poucos
       ia.tiroT -= dt;
       if (ia.visto && ia.alvo && ia.alvo.vivo && ia.tiroT <= 0) {
         ia.tiroT = cfg.cadencia * (0.7 + Math.random() * 0.6);
@@ -2122,7 +2149,7 @@
         const postura = alt < 0.5 ? 0.75 : alt < 1 ? 0.88 : 1, pulo = ia.ar ? cfg.movel : 1;                      // deitado, agachado ou no ar também
         const acertou = Math.random() < cfg.precisao * (ia.dist < 12 ? 1.3 : ia.dist > 28 ? 0.6 : 1) * mov * postura * pulo;
         if (!acertou) fim.add(new V3((Math.random() - 0.5) * 2.4, (Math.random() - 0.2) * 1.6, (Math.random() - 0.5) * 2.4));
-        paraTodos({ t: "tiro", id: b.id, o: arr(olho), e: arr(fim) });
+        paraTodos({ t: "tiro", id: b.id, o: arr(olho), e: arr(fim) }); b.tiroEm = agora;
         if (acertou) ferirJogador(ia.alvo, cfg.dano, b.pos, b.id);
       }
     }
@@ -2476,7 +2503,8 @@
     const b = mp.bolsa, mostra = !!(j && p.alive);
     bolsaEl.hidden = !mostra;
     if (mostra) {
-      const txt = (b.granada ? `<span><kbd>4</kbd> Jogar granada <b>${b.granada}</b></span>` : "") +
+      const txt = (ARMAS[mp.arma] && ARMAS[mp.arma].faca ? `<span class="mp-furtivo">Modo furtivo · ninguém ouve seus passos</span>` : "") +
+        (b.granada ? `<span><kbd>4</kbd> Jogar granada <b>${b.granada}</b></span>` : "") +
         (b.bomba ? `<span><kbd>B</kbd> Armar bomba aqui · explode em ${CFG.bomba.pavio}s <b>${b.bomba}</b></span>` : "") +
         (b.relogio ? `<span><kbd>V</kbd> Armar bomba-relógio de ${CFG.relogio.tempos[mp.tempoIdx]}s <b>${b.relogio}</b> · <kbd>T</kbd> muda o tempo</span>` : "") +
         `<span>Colete <b>${mp.colete ? "sim" : "não"}</b> · Capacete <b>${mp.capacete ? "sim" : "não"}</b></span>`;
