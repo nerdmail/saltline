@@ -1754,6 +1754,24 @@
       bloco(chapa, cx - 0.5 - e, y1, cz - 0.5 - e, cx - 0.5, 8.3, cz + 0.5 + e, true); bloco(chapa, cx + 0.5, y1, cz - 0.5 - e, cx + 0.5 + e, 8.3, cz + 0.5 + e, true);
       bloco(chapa, cx - 0.5, y1, cz - 0.5 - e, cx + 0.5, 8.3, cz - 0.5, true); bloco(chapa, cx - 0.5, y1, cz + 0.5, cx + 0.5, 8.3, cz + 0.5 + e, true);
     }
+    // tampa em volta de cada poço, na altura do telhado: a abertura do telhado é maior que o poço e dava para cair pelo vão
+    const grade = G.mats.get("diamond_plate");
+    for (const [cx, cz, ax, az, bx, bz, topo] of [[D.xe, D.zn, 2.29, -25.88, 3.72, -23.75, 8.33], [0.15, D.zs, -0.57, -15.25, 0.86, -13.13, 8.33]]) {
+      const y = topo - 0.08;
+      if (cz - 0.5 - az > 0.02) bloco(grade, ax, y, az, bx, topo, cz - 0.5 - e, true);
+      if (bz - (cz + 0.5) > 0.02) bloco(grade, ax, y, cz + 0.5 + e, bx, topo, bz, true);
+      if (cx - 0.5 - ax > 0.02) bloco(grade, ax, y, cz - 0.5 - e, cx - 0.5 - e, topo, cz + 0.5 + e, true);
+      if (bx - (cx + 0.5) > 0.02) bloco(grade, cx + 0.5 + e, y, cz - 0.5 - e, bx, topo, cz + 0.5 + e, true);
+    }
+    // guarda-corpo no teto da casinha (menos nas bocas do duto), para ninguém cair pela beirada
+    const S = SALA, trilho = (xa, za, xb, zb) => {
+      fis.addBox([Math.min(xa, xb) - 0.03, S.teto, Math.min(za, zb) - 0.03], [Math.max(xa, xb) + 0.03, S.teto + 1.05, Math.max(za, zb) + 0.03], { surface: "metal", playerOnly: true });
+      for (const y of [0.55, 1.02]) bloco(amarelo, Math.min(xa, xb) - 0.02, S.teto + y - 0.02, Math.min(za, zb) - 0.02, Math.max(xa, xb) + 0.02, S.teto + y + 0.02, Math.max(za, zb) + 0.02);
+      const n = Math.max(1, Math.round(Math.hypot(xb - xa, zb - za) / 1.6));
+      for (let k = 0; k <= n; k++) { const x = xa + (xb - xa) * k / n, z = za + (zb - za) * k / n; bloco(amarelo, x - 0.02, S.teto, z - 0.02, x + 0.02, S.teto + 1.04, z + 0.02); }
+    };
+    trilho(S.x0 + 0.3, S.z1, xw0 - e, S.z1); trilho(xw1 + e, S.z1, S.x1, S.z1);          // beira sul, dos dois lados da boca oeste
+    trilho(S.x1, S.z1, S.x1, zn1 + e); trilho(S.x1, zn0 - e, S.x1, S.z0 + 0.3);            // beira leste, dos dois lados da boca norte
     // acabamento: flanges a cada dois metros, tirantes até o telhado, luzinhas por dentro e moldura listrada nas bocas
     const flange = (eixo, p, a, b) => {
       const f = 0.035, q = 0.03;
