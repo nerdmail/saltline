@@ -115,14 +115,16 @@
     p_fuzil:    { nome: "Fuzil M4",     time: "p", pente: 30, modo: "auto", rpm: 720 },
     p_metra:    { nome: "MP5",          time: "p", pente: 50, modo: "auto", rpm: 720 },
     p_12:       { nome: "Escopeta 12",  time: "p", pente: 15, modo: "auto", rpm: 150, chumbo: 8, alcance: 20 },
-    p_sniper:   { nome: "Sniper",       time: "p", pente: 1,  modo: "semi", rpm: 40, mira: 5, mata: true },     // um tiro por vez, zoom de 5x no botão direito; mata com um tiro
+    p_sniper:   { nome: "Sniper",       time: "p", pente: 1,  modo: "semi", rpm: 20, mira: 5, mata: true },     // um tiro a cada 3 s, zoom de 5x no botão direito; mata com um tiro
+    p_reserva:  { nome: "Pistola",      time: "p", pente: 9,  modo: "auto", rpm: 360, reserva: true },             // só para quem está de faca ou de sniper; não fica no chão
     p_pistola:  { nome: "Pistola 9mm",  time: "p", pente: 15, modo: "auto", rpm: 420 },
     p_revolver: { nome: "Revólver .38", time: "p", pente: 15, modo: "auto", rpm: 300 },
     p_faca:     { nome: "Faca",         time: "p", faca: true },
     t_fuzil:    { nome: "AK-47",        time: "t", pente: 30, modo: "auto", rpm: 560 },
     t_metra:    { nome: "Uzi",          time: "t", pente: 50, modo: "auto", rpm: 720 },
     t_12:       { nome: "12 serrada",   time: "t", pente: 15, modo: "auto", rpm: 150, chumbo: 10, alcance: 15 },
-    t_sniper:   { nome: "Sniper",       time: "t", pente: 1,  modo: "semi", rpm: 40, mira: 5, mata: true },
+    t_sniper:   { nome: "Sniper",       time: "t", pente: 1,  modo: "semi", rpm: 20, mira: 5, mata: true },
+    t_reserva:  { nome: "Pistola",      time: "t", pente: 9,  modo: "auto", rpm: 360, reserva: true },
     t_pistola:  { nome: "Pistola .45",  time: "t", pente: 15, modo: "auto", rpm: 360 },
     t_pistola2: { nome: "Pistola auto", time: "t", pente: 30, modo: "auto", rpm: 600 },
     t_faca:     { nome: "Faca",         time: "t", faca: true },
@@ -159,6 +161,8 @@
     carro: { pos: null, yaw: 0, vel: 0, oc: [null, null, null, null, null], alvo: null, alvoYaw: 0, malha: null, mixer: null },
     correr: false, ctrl: false, deitado: false, naEscada: null, quedaTopo: 0, picharT: 0, grades: null,
     arma: null,               // chave em ARMAS da arma na mão, ou null
+    principal: null,          // a arma pega no chão (a faca e a pistola reserva não contam)
+    municao: {}, prontaEm: {}, armaAntes: null,
     armasChao: new Map(),     // id -> { id, arma, pos, malha, pedido }
     cadT: 0, rajada: 0, gatilhoAntes: false, semPegarT: 0, armaVisivel: null, passoT: 0,
     marionetes: new Map(),    // convidado: id da máquina no anfitrião -> máquina local
@@ -269,7 +273,7 @@
         if (id !== mp.meuId) { j.pos.fromArray(m.p); j.yaw = m.y; j.pitch = m.x; j.agachado = m.c === 1; }
         j.noChao = m.c === 2;                      // deitado por conta própria (tecla Z)
         if (m.k && mp.carro.oc[0] === id && mp.carro.pos) { mp.carro.pos.set(m.k[0], 0, m.k[1]); mp.carro.yaw = m.k[2]; }      // quem dirige diz onde o carro está
-        j.vivo = !!m.v; j.armadura = m.a | 0;
+        j.vivo = !!m.v; j.armadura = m.a | 0; if (id !== mp.meuId) j.arma = ARMAS[m.w] ? m.w : null;
         break;
       case "tiro":
         paraTodos({ t: "tiro", id, o: m.o, e: m.e }, id);
@@ -392,7 +396,7 @@
         for (const d of m.j) {
           const j = mp.jogadores.get(d[0]);
           if (!j || j.id === mp.meuId) continue;
-          j.pos.set(d[1], d[2], d[3]); j.yaw = d[4]; j.pitch = d[5]; j.agachado = d[6] === 1; j.noChao = d[6] === 2; j.vivo = !!d[7]; j.armadura = d[8] | 0;
+          j.pos.set(d[1], d[2], d[3]); j.yaw = d[4]; j.pitch = d[5]; j.agachado = d[6] === 1; j.noChao = d[6] === 2; j.vivo = !!d[7]; j.armadura = d[8] | 0; j.arma = ARMAS[d[9]] ? d[9] : null;
         }
         m.r.forEach((d, i) => { const r = mp.refens[i]; if (r) { r.pos.set(d[0], d[1], d[2]); r.estado = d[3]; r.lider = d[4]; r.prot = d[5] | 0; } });
         sincronizarMarionetes(m.m);
@@ -439,7 +443,7 @@
         if (!it) break;
         tirarArmaDoChao(m.id);
         { const q = mp.jogadores.get(m.por); if (q) q.arma = it.arma; }
-        if (m.por === mp.meuId && (!mp.arma || ARMAS[mp.arma].faca)) { mp.arma = it.arma; mp.rajada = 0; mp.cadT = 0.3; try { G.weapon.reset(); } catch {} tocar("reload_magin"); G.hud.message(ARMAS[it.arma].nome + " · G solta", 2.5); }
+        if (m.por === mp.meuId && !mp.principal) { mp.principal = it.arma; delete mp.municao[it.arma]; mp.arma = it.arma; mp.rajada = 0; mp.cadT = 0.3; try { G.weapon.reset(); } catch {} tocar("reload_magin"); G.hud.message(ARMAS[it.arma].nome + " · G solta", 2.5); }
         break;
       }
       case "porta": aplicarPorta(!!m.aberta); break;
@@ -458,7 +462,7 @@
         explosivos.remove(it.malha); explosivos.remove(it.anel); mp.itens.delete(m.id);
         if (m.por === mp.meuId) {
           if (it.tipo === "colete" || it.tipo === "capacete") mp[it.tipo] = true; else mp.bolsa[it.tipo]++;
-          tocar("reload_magin"); G.hud.message("Pegou: " + NOMES_ITEM[it.tipo] + ({ granada: " · aperte Q para jogar", bomba: " · aperte B para armar no chão", relogio: " · aperte V para armar (T muda o tempo)" }[it.tipo] || ""), 4.5);
+          tocar("reload_magin"); G.hud.message("Pegou: " + NOMES_ITEM[it.tipo] + ({ granada: " · aperte 4 para jogar", bomba: " · aperte B para armar no chão", relogio: " · aperte V para armar (T muda o tempo)" }[it.tipo] || ""), 4.5);
         }
         break;
       }
@@ -584,12 +588,13 @@
       <ul class="mp-regras">
         <li><b>Objetivo</b> Policiais soltam os reféns (segure E) e levam ao ponto de resgate mostrado no painel da sala. Terroristas impedem até o tempo acabar.</li>
         <li><b>Fim da rodada</b> Todos os reféns salvos, um refém morto, um time inteiro caído ou o tempo esgotado.</li>
-        <li><b>Sniper</b> Um tiro por vez, zoom de 5x no botão direito. Mata jogador com um tiro, com ou sem colete; refém precisa de dois.</li>
+        <li><b>Sniper</b> Um tiro a cada 3 segundos, zoom de 5x no botão direito. Mata jogador com um tiro, com ou sem colete; refém precisa de dois.</li>
+        <li><b>Pistola reserva</b> Quem está só de faca ou de sniper também leva uma pistola de 9 tiros: aperte 2 (ou Q). De pistola na mão os passos fazem barulho; de faca, não.</li>
         <li><b>Lugares altos</b> Vários containers, o telhado do galpão e um mirante na torre do guindaste têm escada de mão. Para descer: olhe para baixo e aperte W.</li>
         <li><b>Armas</b> Todos nascem com a faca. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
-        <li><b>Explosivos</b> Pegue passando por cima. Q joga a granada; B arma a bomba no chão onde você está; V arma a bomba-relógio (T muda o tempo). Qualquer um desarma segurando E perto dela.</li>
+        <li><b>Explosivos</b> Pegue passando por cima. 4 joga a granada; B arma a bomba no chão onde você está; V arma a bomba-relógio (T muda o tempo). Qualquer um desarma segurando E perto dela.</li>
         <li><b>Placar</b> Segure Tab para ver quem está vivo, os abates e as vitórias de cada time.</li>
-        <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
+        <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q troca de arma (1 arma, 2 pistola, 3 faca) · 4 granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
         <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura metade de um tiro no corpo; o capacete salva de um tiro na cabeça. Cada um aguenta um tiro só.</li>
         <li><b>Sala dos reféns</b> Tem 4 portas secretas numeradas (cada uma leva sempre ao mesmo lugar) e uma escada de mão até o duto de ar.</li>
         <li><b>Duto e telhado</b> No duto só se rasteja; ele leva a escadas para o chão e para o telhado. Na escada: W sobe; olhando para baixo, W desce.</li>
@@ -713,7 +718,7 @@
     prepararSala(); aplicarPorta(false);
     zerarRefens(); limparExplosivos(); limparArmas(); porCarro(m.carro);
     for (const j of mp.jogadores.values()) { j.arma = j.time ? j.time + "_faca" : null; j.armadura = 0; j.abatesRodada = 0; }      // todo mundo nasce com a faca
-    mp.arma = eu() && eu().time && m.nasc[mp.meuId] ? eu().time + "_faca" : null;
+    mp.arma = eu() && eu().time && m.nasc[mp.meuId] ? eu().time + "_faca" : null; mp.principal = null; mp.municao = {}; mp.prontaEm = {}; mp.armaAntes = null;
     for (const d of m.armas || []) porArmaNoChao(d);
     for (const d of m.itens || []) {
       const it = { id: d[0], tipo: d[1], pos: new V3(d[2], 0, d[3]), malha: modeloExplosivo(d[1], d[1] === "colete" || d[1] === "capacete" ? 1.5 : 2.2), pedido: false };
@@ -737,7 +742,7 @@
     const t = eu() && TIMES[eu().time];
     if (t && meu) G.hud.radio("Você está com os " + t.nome + ". " + t.objetivo + ".", CFG.tempoPreparo + 1);
     else G.hud.message("Você entra na próxima rodada", 6);
-    if (meu) G.hud.message((meu[1] > 1 ? "Armas no cabide sob a janela" : "Pegue uma arma no chão") + " · G solta · R recarrega · C corre · P picha", CFG.tempoPreparo + 6);
+    if (meu) G.hud.message((meu[1] > 1 ? "Armas no cabide sob a janela" : "Pegue uma arma no chão") + " · G solta · R recarrega · Q troca de arma · C corre", CFG.tempoPreparo + 6);
     gradesVazadas(true); G.player.tuning.sprint = G.player.tuning.walk * 2;      // correr = o dobro de andar
     mp.quedaTopo = meu ? meu[1] : 0; mp.naEscada = null; mp.deitarManual = false;
     if (!meu) p.alive = false;
@@ -1725,7 +1730,7 @@
     caixa(cenario, aco, 3.9, 0.86, 0.03, xc, S.chao + 0.45, zc);
     caixa(cenario, batente, 3.9, 0.04, 0.09, xc, S.chao + 0.03, zc - 0.03); caixa(cenario, batente, 3.9, 0.035, 0.06, xc, S.chao + 0.89, zc - 0.02);
     caixa(cenario, aco, 3.9, 0.13, 0.02, xc, S.chao + 0.975, zc);
-    Object.keys(ARMAS).filter(k => ARMAS[k].time === "p" && !ARMAS[k].faca).forEach((k, n) => {
+    Object.keys(ARMAS).filter(k => ARMAS[k].time === "p" && !ARMAS[k].faca && !ARMAS[k].reserva).forEach((k, n) => {
       const cv = document.createElement("canvas"); cv.width = 320; cv.height = 64; const c = cv.getContext("2d");
       c.fillStyle = "#14181b"; c.fillRect(0, 0, 320, 64); c.strokeStyle = "#ffb347"; c.lineWidth = 4; c.strokeRect(2, 2, 316, 60);
       c.fillStyle = "#e8e4da"; c.textAlign = "center"; c.textBaseline = "middle"; c.font = '600 36px "Barlow Condensed", Arial, sans-serif'; c.fillText(ARMAS[k].nome.toUpperCase(), 160, 34);
@@ -2287,7 +2292,7 @@
     const b = mp.bolsa, mostra = !!(j && p.alive);
     bolsaEl.hidden = !mostra;
     if (mostra) {
-      const txt = (b.granada ? `<span><kbd>Q</kbd> Jogar granada <b>${b.granada}</b></span>` : "") +
+      const txt = (b.granada ? `<span><kbd>4</kbd> Jogar granada <b>${b.granada}</b></span>` : "") +
         (b.bomba ? `<span><kbd>B</kbd> Armar bomba aqui · explode em ${CFG.bomba.pavio}s <b>${b.bomba}</b></span>` : "") +
         (b.relogio ? `<span><kbd>V</kbd> Armar bomba-relógio de ${CFG.relogio.tempos[mp.tempoIdx]}s <b>${b.relogio}</b> · <kbd>T</kbd> muda o tempo</span>` : "") +
         `<span>Colete <b>${mp.colete ? "sim" : "não"}</b> · Capacete <b>${mp.capacete ? "sim" : "não"}</b></span>`;
@@ -2298,7 +2303,7 @@
     const p = G && G.player, j = eu();
     if (!emRodada() || mp.fase !== "valendo" || !j || !p.alive || ev.repeat) return;
     if (ev.code === "KeyT") mp.tempoIdx = (mp.tempoIdx + 1) % CFG.relogio.tempos.length;
-    else if (ev.code === "KeyQ" && mp.bolsa.granada > 0) {
+    else if ((ev.code === "Digit4" || ev.code === "Numpad4") && mp.bolsa.granada > 0) {
       mp.bolsa.granada--;
       const v = p.forward.clone().multiplyScalar(CFG.granada.forca); v.y += 3;
       enviar({ t: "granada", o: arr(p.eye.clone().addScaledVector(p.forward, 0.5)), v: arr(v) });
@@ -2315,7 +2320,7 @@
     const lista = []; let naSala = 0;
     for (const [id, pt] of Object.entries(nasc)) {
       const j = mp.jogadores.get(id); if (!j) continue;
-      const chaves = Object.keys(ARMAS).filter(k => ARMAS[k].time === j.time && !ARMAS[k].faca), dentro = pt[1] > 1, fila = dentro ? naSala++ : 0;
+      const chaves = Object.keys(ARMAS).filter(k => ARMAS[k].time === j.time && !ARMAS[k].faca && !ARMAS[k].reserva), dentro = pt[1] > 1, fila = dentro ? naSala++ : 0;
       chaves.forEach((k, n) => {
         if (dentro) return lista.push([mp.proxId++, k, +(-15.2 + n * 0.56 + (fila ? 0.12 : -0.12)).toFixed(2), +(SALA.z1 - 0.35).toFixed(2), SALA.chao, 1]);   // no cabide sob a janela
         const ang = n / chaves.length * Math.PI * 2, q = pisavel(pt[0] + Math.cos(ang) * 2, pt[2] + Math.sin(ang) * 2);
@@ -2355,14 +2360,14 @@
   }
   function limparArmas() {
     for (const id of [...mp.armasChao.keys()]) tirarArmaDoChao(id);
-    mp.arma = null; mp.rajada = 0; mp.cadT = 0; mp.armaVisivel = null; mp.gatilhoAntes = false;
+    mp.arma = null; mp.principal = null; mp.municao = {}; mp.prontaEm = {}; mp.armaAntes = null; mp.rajada = 0; mp.cadT = 0; mp.armaVisivel = null; mp.gatilhoAntes = false;
   }
   function soltarArma() {
-    if (!mp.arma || ARMAS[mp.arma].faca || !emRodada()) return;      // a faca não se solta: é o que sobra na mão
+    if (!mp.principal || !emRodada()) return;      // só a arma pega no chão se solta; a faca (e a pistola reserva) ficam
     const p = G.player;
-    enviar({ t: "armaSolta", arma: mp.arma, p: [+(p.pos.x - Math.sin(p.yaw) * 0.9).toFixed(2), +(p.pos.z - Math.cos(p.yaw) * 0.9).toFixed(2), +p.pos.y.toFixed(2)] });
+    enviar({ t: "armaSolta", arma: mp.principal, p: [+(p.pos.x - Math.sin(p.yaw) * 0.9).toFixed(2), +(p.pos.z - Math.cos(p.yaw) * 0.9).toFixed(2), +p.pos.y.toFixed(2)] });
     for (const it of mp.armasChao.values()) if (Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z) < 1.8) it.espera = true;      // as armas por perto só voltam a ser pegas depois de se afastar
-    mp.arma = eu() && eu().time ? eu().time + "_faca" : null; mp.rajada = 0; mp.semPegarT = 0.5; tocar("reload_magout");      // soltou a arma: volta para a faca
+    mp.principal = null; mp.arma = eu() && eu().time ? eu().time + "_faca" : null; mp.rajada = 0; mp.semPegarT = 0.5; tocar("reload_magout");      // soltou a arma: volta para a faca
   }
   function facada() {
     facaAnim = 0.32;
@@ -2398,15 +2403,22 @@
     if (a && a.faca && vale && gatilho && !mp.gatilhoAntes && mp.cadT <= 0) { mp.cadT = FACA.espera; facada(); }
     if (G.input.sprint && G.input.move.y > 0.55) pode = false;        // correndo a arma abaixa: não atira
     mp.gatilhoAntes = gatilho; G.input.fire = pode;
-    if (mp.arma !== mp.armaPente) { mp.armaPente = mp.arma; if (a && !a.faca) { w.magSize = a.pente; w.ammo = a.pente; } }      // arma nova na mão: pente cheio
+    if (mp.arma !== mp.armaPente) {                      // trocou de arma: cada uma guarda a sua munição e o seu tempo de espera
+      const antes = ARMAS[mp.armaPente], agora = performance.now() / 1000;
+      if (antes && !antes.faca) { mp.municao[mp.armaPente] = w.ammo; mp.prontaEm[mp.armaPente] = agora + Math.max(0, mp.cadT); }
+      mp.armaPente = mp.arma; mp.rajada = 0;
+      if (a && !a.faca) { w.magSize = a.pente; w.ammo = mp.municao[mp.arma] != null ? mp.municao[mp.arma] : a.pente; }
+      mp.cadT = Math.max(0.3, (mp.prontaEm[mp.arma] || 0) - agora);
+    }
     if (a && !a.faca) { w.magSize = a.pente; if (w.ammo > a.pente) w.ammo = a.pente; w.reserve = 150; }       // munição infinita: R sempre recarrega
     p.tuning.fovAds = a && a.mira ? (p.baseFov || 75) / a.mira : 52; p.tuning.adsLook = a && a.mira ? 0.22 : 0.6;      // zoom da sniper no botão direito
+    if (a && a.reserva && !temReserva()) { mp.arma = mp.principal; return; }      // pegou uma arma comum: a reserva some
     w.name = a ? a.nome : "Sem arma";
     const visivel = !!a && !a.faca && p.alive;
     if (visivel !== mp.armaVisivel) { mp.armaVisivel = visivel; w.setVisible(visivel); }
     if (mp.arma !== modeloAtual) aplicarModelo(mp.arma);
     animarFaca(dt, !!(a && a.faca) && p.alive);
-    if ((!a || a.faca) && p.alive && mp.semPegarT <= 0 && mp.fase !== "fim") {      // de faca na mão, passar por cima de uma arma pega a arma
+    if (!mp.principal && p.alive && mp.semPegarT <= 0 && mp.fase !== "fim") {      // de faca na mão, passar por cima de uma arma pega a arma
       let alvo = null, dAlvo = 0.85;                  // pega a mais próxima das que estão ao alcance
       for (const it of mp.armasChao.values()) {
         const d = Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z);
@@ -2428,6 +2440,28 @@
     if (ev.code === "KeyG" && !ev.repeat && emRodada() && G.player.alive && !(tela && !tela.hidden)) soltarArma();
   });
 
+  // troca de arma como no CS: Q alterna com a última usada, 1 = arma pega no chão, 2 = pistola reserva, 3 = faca.
+  // A pistola reserva (9 tiros) só existe para quem não tem arma do chão ou está de sniper.
+  function temReserva() { return !mp.principal || !!ARMAS[mp.principal].mata; }
+  function trocarArma(para) {
+    const t = eu() && eu().time; if (!t || !para || para === mp.arma || !ARMAS[para]) return;
+    if (ARMAS[para].reserva && !temReserva()) return;
+    mp.armaAntes = mp.arma; mp.arma = para; tocar("reload_magin");
+  }
+  window.addEventListener("keydown", ev => {
+    if (ev.repeat || !emRodada() || mp.fase === "fim" || !G.player.alive || (tela && !tela.hidden)) return;
+    const t = eu() && eu().time; if (!t) return;
+    if (ev.code === "Digit1") trocarArma(mp.principal);
+    else if (ev.code === "Digit2") trocarArma(t + "_reserva");
+    else if (ev.code === "Digit3") trocarArma(t + "_faca");
+    else if (ev.code === "KeyQ") {
+      let alvo = mp.armaAntes;
+      if (!alvo || !ARMAS[alvo] || alvo === mp.arma || (alvo !== mp.principal && !ARMAS[alvo].faca && !(ARMAS[alvo].reserva && temReserva())))
+        alvo = mp.arma === mp.principal || !mp.principal ? (temReserva() && mp.arma !== t + "_reserva" ? t + "_reserva" : t + "_faca") : mp.principal;
+      trocarArma(alvo);
+    }
+  });
+
   /* ------------------------------------------------------- modelos das armas */
   // As armas de fogo usam o modelo original do jogo (o único detalhado), cada uma com uma variação:
   // z = comprimento, g = grossura, acab = acabamento da coronha e do guarda-mão,
@@ -2443,6 +2477,8 @@
     t_sniper:   { z: 1.4,  g: 0.92, acab: "madeira", pente: [0.7, 0.6],  duasMaos: true },
     t_12:       { z: 0.62, g: 1.2,  acab: "madeira", pente: 0,           duasMaos: true },
     p_pistola:  { z: 1,    g: 0.9,  acab: "preto",   pente: 0,           duasMaos: false, curta: true },
+    p_reserva:  { z: 0.95, g: 0.88, acab: "preto",   pente: 0,           duasMaos: false, curta: true },
+    t_reserva:  { z: 0.95, g: 0.88, acab: "areia",   pente: 0,           duasMaos: false, curta: true },
     p_revolver: { z: 0.88, g: 0.98, acab: "aco",     pente: 0,           duasMaos: false, curta: true },
     t_pistola:  { z: 1.08, g: 0.94, acab: "areia",   pente: 0,           duasMaos: false, curta: true },
     t_pistola2: { z: 1.12, g: 0.86, acab: "madeira", pente: 0,           duasMaos: false, curta: true },
@@ -2614,10 +2650,10 @@
       mp.envioT -= dt;
       if (mp.envioT <= 0) {
         mp.envioT = 1 / 30;      // 30 atualizações por segundo entre os jogadores
-        if (j) enviar({ t: "estado", p: arr(p.pos), y: +p.yaw.toFixed(3), x: +p.pitch.toFixed(3), c: mp.deitarManual ? 2 : p.crouching ? 1 : 0, v: j.vivo ? 1 : 0, a: (mp.colete ? 1 : 0) | (mp.capacete ? 2 : 0),
+        if (j) enviar({ t: "estado", p: arr(p.pos), y: +p.yaw.toFixed(3), x: +p.pitch.toFixed(3), c: mp.deitarManual ? 2 : p.crouching ? 1 : 0, v: j.vivo ? 1 : 0, a: (mp.colete ? 1 : 0) | (mp.capacete ? 2 : 0), w: mp.arma || "",
           k: mp.carro.oc[0] === mp.meuId && mp.carro.pos ? [+mp.carro.pos.x.toFixed(2), +mp.carro.pos.z.toFixed(2), +mp.carro.yaw.toFixed(3)] : undefined });
         if (mp.anfitriao) paraTodos({ t: "estados", tempo: +mp.tempo.toFixed(1),
-          j: [...mp.jogadores.values()].map(x => [x.id, ...arr(x.pos), +x.yaw.toFixed(3), +x.pitch.toFixed(3), x.noChao ? 2 : x.agachado ? 1 : 0, x.vivo ? 1 : 0, x.armadura | 0]),
+          j: [...mp.jogadores.values()].map(x => [x.id, ...arr(x.pos), +x.yaw.toFixed(3), +x.pitch.toFixed(3), x.noChao ? 2 : x.agachado ? 1 : 0, x.vivo ? 1 : 0, x.armadura | 0, x.id === mp.meuId ? mp.arma || "" : x.arma || ""]),
           r: mp.refens.map(r => [...arr(r.pos), r.estado, r.lider, r.prot | 0]),
           k: mp.carro.pos ? [+mp.carro.pos.x.toFixed(2), +mp.carro.pos.z.toFixed(2), +mp.carro.yaw.toFixed(3)] : null,
           m: G.enemies.list.filter(e => e.alive).map(e => [e.id, e.type === "hound" ? 1 : 0, ...arr(e.pos), +(e.yaw || 0).toFixed(2)]) }, mp.meuId);
