@@ -3544,6 +3544,18 @@
     if (versaoEl) { G.events.on("game:state", ev => { versaoEl.hidden = !!ev && ev.state === "playing"; }); }
     window.__mp = mp; window.__MAO = MAO;
   }
+  // TELA CHEIA SEMPRE. O navegador só deixa entrar em tela cheia a partir de um clique ou tecla da pessoa; então, a cada
+  // clique ou tecla, se a página não estiver em tela cheia, ela entra. Em tela cheia o Esc fica preso para o jogo (pausa),
+  // em vez de sair da tela cheia, nos navegadores que permitem isso.
+  const telaCheia = () => {
+    const d = document; if (d.fullscreenElement || d.webkitFullscreenElement) return;
+    const el = d.documentElement, entrar = el.requestFullscreen || el.webkitRequestFullscreen; if (!entrar) return;
+    try {
+      const r = entrar.call(el, { navigationUI: "hide" });
+      if (r && r.then) r.then(() => { try { if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(["Escape"]); } catch {} }).catch(() => {});
+    } catch {}
+  };
+  for (const tipo of ["pointerdown", "keydown"]) window.addEventListener(tipo, telaCheia, true);
   const espera = setInterval(() => {
     if (window.__fatal) return clearInterval(espera);
     if (window.__ready && window.__G && window.__G.game && window.__G.game.menus) { clearInterval(espera); try { iniciar(); } catch (e) { console.error("[mp] não iniciou", e); } }
