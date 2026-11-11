@@ -805,7 +805,8 @@
     for (const c of fonte.clips) { const a = acoes[c.name] = mixer.clipAction(c); a.play(); a.setEffectiveWeight(c.name === "Idle" ? 1 : 0); }
     if (time) {
       const mFaixa = new T.MeshStandardMaterial({ color: ROUPAS[time].faixa, emissive: ROUPAS[time].faixa, emissiveIntensity: 0.7, roughness: 0.8 });
-      for (const n of ["LeftArm", "RightArm"]) { const f = new T.Mesh(new T.CylinderGeometry(7.2, 7.2, 6, 14), mFaixa); f.position.y = 13; ossos[n].add(f); }   // medidas do osso em cm
+      const u = fonte === soldado ? 100 : 1, raio = fonte === soldado ? 0.072 : 0.058;      // os ossos do soldado medem em centímetros; os do civil, em metros
+      for (const n of ["LeftArm", "RightArm"]) { const f = new T.Mesh(new T.CylinderGeometry(raio * u, raio * u, 0.06 * u, 14), mFaixa); f.position.y = 0.13 * u; ossos[n].add(f); }
     }
     let coleteM = null, capaceteM = null;
     if (fonte === civilModelo) {     // peças presas aos ossos: balaclava, lenço e bandoleira do terrorista; colete e capacete de quem tem
@@ -875,7 +876,7 @@
   }
   // o soldado no lugar: animação conforme a velocidade, arma apontada (com as mãos nela), agachado, rastejando e caído
   function posarModelo(b, cur, yaw, k, dt, o) {
-    const vel = dt > 0 ? Math.hypot(cur.x - b.ult.x, cur.z - b.ult.z) / dt : 0, deitado = !!o.deitado && o.vivo, m = b.modelo;
+    const vel = dt > 0 ? Math.hypot(cur.x - b.ult.x, cur.z - b.ult.z) / dt : 0, deitado = !!o.deitado && o.vivo, m = b.modelo, ajoelhado = !!o.ajoelhado && o.vivo && !deitado && b.semClipes;
     b.ult.copy(cur); b.grupo.position.copy(cur);
     let d = yaw - b.grupo.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); b.grupo.rotation.y += d * k;
     b.andar += (Math.min(vel, 9) - b.andar) * Math.min(1, 10 * dt);
@@ -886,7 +887,8 @@
       const amp = o.vivo ? Math.min(1, v / 3) * (deitado ? 0.4 : 1) : 0, s = Math.sin(b.fase) * amp;
       for (const [L, sinal, x] of [["Left", 1, -1], ["Right", -1, 1]]) {
         const a = s * sinal * 0.7, j = a - Math.max(0, -s * sinal) * 0.9;
-        apontarLocal(b, L + "UpLeg", 0, -Math.cos(a), -Math.sin(a)); apontarLocal(b, L + "Leg", 0, -Math.cos(j), -Math.sin(j));
+        if (ajoelhado) { apontarLocal(b, L + "UpLeg", 0, -1, -0.1); apontarLocal(b, L + "Leg", 0, -0.12, 1); }      // de joelhos: coxa em pé, canela para trás
+        else { apontarLocal(b, L + "UpLeg", 0, -Math.cos(a), -Math.sin(a)); apontarLocal(b, L + "Leg", 0, -Math.cos(j), -Math.sin(j)); }
         const br = -s * sinal * 0.45;         // o braço balança ao contrário da perna
         apontarLocal(b, L + "Arm", x * b.lado * 0.16, -Math.cos(br), -Math.sin(br)); apontarLocal(b, L + "ForeArm", x * b.lado * 0.06, -Math.cos(br + 0.25), -Math.sin(br + 0.25));
       }
@@ -896,7 +898,7 @@
       if (o.vivo) b.mixer.update(dt);
     }
     m.rotation.x += ((!o.vivo || deitado ? -Math.PI / 2 : 0) - m.rotation.x) * k;          // caído ou rastejando: de bruços
-    m.position.y += ((!o.vivo ? 0.18 : deitado ? 0.22 : 0) - m.position.y) * k;
+    m.position.y += ((!o.vivo ? 0.18 : deitado ? 0.22 : ajoelhado ? -0.4 : 0) - m.position.y) * k;
     m.position.z += ((deitado ? 0.8 : 0) - m.position.z) * k;
     m.scale.y += ((o.agachado && o.vivo && !deitado ? 0.7 : 1) - m.scale.y) * k;
     const longa = o.pose === "arma", comArma = o.vivo && (longa || o.pose === "pistola");
@@ -1149,7 +1151,7 @@
       r.miraT = (r.miraT || 0) - dt;
       if (r.estado === 1 && r.miraT <= 0 && dx * dx + dz * dz > lim * lim) r.yaw = Math.atan2(-dx, -dz);   // só vira quando anda de verdade
       r.boneco.grupo.visible = r.estado !== 2;
-      posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: false, pitch: 0, pose: r.estado === 1 ? "pistola" : "preso", sentado: r.estado === 0 && !!r.civil.senta && !r.boneco.modelo, deitado: noDuto(r.cur) });
+      posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: false, pitch: 0, pose: r.estado === 1 ? "pistola" : "preso", sentado: r.estado === 0 && !!r.civil.senta && !r.boneco.modelo, ajoelhado: r.estado === 0, deitado: noDuto(r.cur) });
       r.boneco.arma.visible = r.estado === 1;                 // solto pelo policial, já armado
       r.boneco.colete.visible = !!(r.prot & 1) && r.estado !== 3; r.boneco.capacete.visible = !!(r.prot & 2) && r.estado !== 3;
     }
@@ -1177,7 +1179,7 @@
       }
     };
     for (const j of mp.jogadores.values()) if (j.id !== mp.meuId && j.vivo && j.time !== meuTime) testar(j.cur, j.deitado ? 0.6 : j.agachado ? 1.15 : 1.7, { j });
-    for (const r of mp.refens) if (r.estado < 2) testar(r.cur, noDuto(r.cur) ? 0.6 : (r.estado === 0 && r.civil.senta && !r.boneco.modelo ? 1.08 : 1.7) * r.civil.escala, { r });
+    for (const r of mp.refens) if (r.estado < 2) testar(r.cur, noDuto(r.cur) ? 0.6 : (r.estado === 0 ? (r.boneco.modelo ? 1.32 : r.civil.senta ? 1.08 : 1.7) : 1.7) * r.civil.escala, { r });
     return melhor;
   }
   function instalarTiros() {
@@ -1396,6 +1398,7 @@
       if (visto) { dist = d; alvo = { j, peito }; }
     }
     if (!alvo) return;
+    { const p = posDe(alvo.j), dx = p.x - r.pos.x, dz = p.z - r.pos.z, d = Math.hypot(dx, dz) || 1; r.combateT = 1.8; r.alvoLado = [-dz / d, dx / d]; }   // em combate: vai se mexer de lado
     const acertou = Math.random() < ia.precisao * (dist < 10 ? 1.4 : dist > 20 ? 0.6 : 1), fim = alvo.peito.clone();
     if (!acertou) fim.add(new V3((Math.random() - 0.5) * 2.4, (Math.random() - 0.2) * 1.6, (Math.random() - 0.5) * 2.4));
     paraTodos({ t: "tiro", id: "refem", o: arr(olho), e: arr(fim) });
@@ -1433,7 +1436,8 @@
           const ox = ancora.x - r.pos.x, oz = ancora.z - r.pos.z, od = Math.hypot(ox, oz);
           if (od > folga) { wx = ox / od * 0.6; wz = oz / od * 0.6; }
         }
-        const lado = inimigoMirando(r);                // desvia para o lado (e às vezes pula) quando um Terrorista mira nele
+        r.combateT = (r.combateT || 0) - dt;
+        const lado = inimigoMirando(r) || (r.combateT > 0 ? r.alvoLado : null);   // desvia para o lado (e às vezes pula) quando miram nele ou quando está trocando tiro
         if (lado) {
           r.ladoT -= dt;
           if (r.ladoT <= 0) { r.ladoT = 0.5 + Math.random() * 0.6; r.lado = Math.random() < 0.5 ? 1 : -1; if (r.noChao && Math.random() < ia.esquiva * 0.5) r.vel.y = 5; }
@@ -1681,6 +1685,17 @@
     discoResgate = new T.Group(); discoResgate.visible = false; cenario.add(discoResgate);
     const R = RAIO_RESGATE;
     for (const [w, d, x, z] of [[2 * R, 0.3, 0, -R], [2 * R, 0.3, 0, R], [0.3, 2 * R, -R, 0], [0.3, 2 * R, R, 0]]) caixa(discoResgate, faixa, w, 0.03, d, x, 0.03, z);
+    // facho de luz no ponto de resgate, para os Policiais acharem de longe (os Terroristas não recebem o ponto, então não veem nada)
+    const facho = new T.Mesh(new T.CylinderGeometry(R * 0.5, R, 60, 28, 1, true), new T.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.16, side: T.DoubleSide, depthWrite: false, toneMapped: false, blending: T.AdditiveBlending }));
+    facho.position.y = 30; discoResgate.add(facho);
+    // seta no céu em cima do ponto (aparece por cima de tudo, para todo Policial ver de qualquer lugar)
+    const cvS = document.createElement("canvas"); cvS.width = cvS.height = 256; const cs = cvS.getContext("2d");
+    cs.fillStyle = "#ffd27a"; cs.strokeStyle = "rgba(0,0,0,.7)"; cs.lineWidth = 10; cs.lineJoin = "round";
+    cs.beginPath(); cs.moveTo(92, 20); cs.lineTo(164, 20); cs.lineTo(164, 130); cs.lineTo(220, 130); cs.lineTo(128, 240); cs.lineTo(36, 130); cs.lineTo(92, 130); cs.closePath(); cs.stroke(); cs.fill();
+    const seta = new T.Sprite(new T.SpriteMaterial({ map: new T.CanvasTexture(cvS), transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+    seta.scale.set(7, 7, 1); seta.position.y = 24; seta.renderOrder = 50; discoResgate.add(seta);
+    const brilho = new T.Mesh(new T.CircleGeometry(R, 32), new T.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.22, depthWrite: false, toneMapped: false, blending: T.AdditiveBlending }));
+    brilho.rotation.x = -Math.PI / 2; brilho.position.y = 0.05; discoResgate.add(brilho);
     // painel na parede leste da sala dos reféns: mapa do porto e o nome do ponto de resgate da rodada
     const tela = document.createElement("canvas"); tela.width = 1024; tela.height = 640;
     painel = new T.Mesh(new T.PlaneGeometry(2.5, 1.5625), new T.MeshBasicMaterial({ map: new T.CanvasTexture(tela), toneMapped: false }));
