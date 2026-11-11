@@ -793,6 +793,7 @@
     } catch {}
     if (rotuloHud) rotuloHud.textContent = "Relés";
     if (mp.carro.malha) mp.carro.malha.visible = false; mp.carro.pos = null; mp.carro.oc = [null, null, null, null, null];
+    if (mp.linhaMunicao) mp.linhaMunicao.style.visibility = "";
     cenario.visible = false; explosivos.visible = false; bolsaEl.hidden = true; limparExplosivos(); limparArmas(); limparPichacoes();
     gradesVazadas(false);
     try { const t = G.player.tuning; t.sprint = 6.4; t.crouchHeight = 1.15; t.crouch = 1.9; } catch {}
@@ -2491,7 +2492,7 @@
   function sortearArmas(nasc) {                 // anfitrião: um conjunto completo perto de onde cada jogador nasce
     const lista = []; let naSala = 0;
     for (const [id, pt] of Object.entries(nasc)) {
-      const j = mp.jogadores.get(id); if (!j) continue;
+      const j = mp.jogadores.get(id); if (!j || j.bot) continue;      // bot já nasce armado: não precisa de armas no chão
       const chaves = Object.keys(ARMAS).filter(k => ARMAS[k].time === j.time && !ARMAS[k].faca && !ARMAS[k].reserva), dentro = pt[1] > 1, fila = dentro ? naSala++ : 0;
       chaves.forEach((k, n) => {
         if (dentro) return lista.push([mp.proxId++, k, +(-15.2 + n * 0.56 + (fila ? 0.12 : -0.12)).toFixed(2), +(SALA.z1 - 0.35).toFixed(2), SALA.chao, 1]);   // no cabide sob a janela
@@ -2585,10 +2586,15 @@
       const antes = ARMAS[mp.armaPente], agora = performance.now() / 1000;
       if (antes && !antes.faca) { mp.municao[mp.armaPente] = w.ammo; mp.prontaEm[mp.armaPente] = agora + Math.max(0, mp.cadT); }
       mp.armaPente = mp.arma; mp.rajada = 0;
+      try { w.reset(); } catch {}                         // cancela uma recarga que estivesse no meio (senão ela terminava na arma nova, com a munição errada)
+      w.setVisible(!!a && !a.faca && p.alive); mp.armaVisivel = !!a && !a.faca && p.alive;
       if (a && !a.faca) { w.magSize = a.pente; w.ammo = mp.municao[mp.arma] != null ? mp.municao[mp.arma] : a.pente; }
       mp.cadT = Math.max(0.3, (mp.prontaEm[mp.arma] || 0) - agora);
     }
-    if (a && !a.faca) { w.magSize = a.pente; if (w.ammo > a.pente) w.ammo = a.pente; w.reserve = 150; }       // munição infinita: R sempre recarrega
+    if (a && !a.faca) { w.magSize = a.pente; if (w.ammo > a.pente) w.ammo = a.pente; w.reserve = 150; }
+    if (a && !a.faca && vale && w.ammo <= 0 && w.state !== "reloading" && !mp.trocaPara) { try { w.reloadNow(); } catch {} }      // pente vazio: recarrega sozinho
+    if (!mp.linhaMunicao) mp.linhaMunicao = document.querySelector(".h-ammo-row");
+    if (mp.linhaMunicao) mp.linhaMunicao.style.visibility = a && a.faca ? "hidden" : "";                                         // de faca não há munição para mostrar       // munição infinita: R sempre recarrega
     p.tuning.fovAds = a && a.mira ? (p.baseFov || 75) / a.mira : 52; p.tuning.adsLook = a && a.mira ? 0.22 : 0.6;      // zoom da sniper no botão direito
     if (a && a.reserva && !temReserva()) { mp.arma = mp.principal; return; }      // pegou uma arma comum: a reserva some
     w.name = a ? a.nome : "Sem arma";
