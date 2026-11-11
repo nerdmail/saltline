@@ -1515,10 +1515,12 @@
         const lp = posDe(lider), dx = lp.x - r.pos.x, dz = lp.z - r.pos.z, d = Math.hypot(dx, dz);
         ancora = lp; folga = 2.6;
         if (d > 9) { r.pos.set(lp.x - dx / d * 1.2, lp.y, lp.z - dz / d * 1.2); r.trilha.length = 0; }   // o líder usou uma saída secreta
-        else if (Math.hypot(d, lp.y - r.pos.y) <= 1.7 && !noMeioDaEscada(r.pos)) {   // chegou: fica parado, mas guarda os últimos passos do líder para não cortar caminho depois
+        else if (Math.hypot(d, lp.y - r.pos.y) <= 1.7) {   // chegou: fica parado a um passo de distância (também na escada e no duto), guardando os últimos passos do líder
           const ult = r.trilha[r.trilha.length - 1];
           if (!ult || ult.distanceTo(lp) > 0.5) r.trilha.push(lp.clone());
           while (r.trilha.length > 8) r.trilha.shift();
+          // se o líder veio para cima dele (por exemplo, voltando para sair do duto), recua para não ficar na frente
+          if (d > 0.05 && Math.hypot(d, lp.y - r.pos.y) < 1.1 && !noMeioDaEscada(r.pos)) { wx = -dx / d * 0.8; wz = -dz / d * 0.8; }
         }      // chegou (contando a altura: na escada o líder fica abaixo)
         else {                                         // segue a trilha por onde o líder passou (funciona na porta e na escada)
           const ult = r.trilha[r.trilha.length - 1];
