@@ -38,13 +38,14 @@
   // tempo da rodada (s), máquinas no começo, máquinas extras a cada refém solto ou salvo, teto de máquinas vivas.
   // refem: tiros na cabeça para matar, chance de acertar cada tiro, segundos entre tiros, dano por tiro, o quanto desvia (0 a 1)
   const DIFICULDADES = {
-    facil:   { nome: "Fácil",       tempo: 210, patrulha: { gull: 1, hound: 0 }, onda: { gull: 1, hound: 0 }, max: 3,
+    // maq: dano = quanto do dano de drone e cão chega ao jogador; fraqueza = por quanto se multiplica o dano que eles levam
+    facil:   { nome: "Fácil",       maq: { dano: 0.3, fraqueza: 2.4 }, tempo: 210, patrulha: { gull: 1, hound: 0 }, onda: { gull: 1, hound: 0 }, max: 3,
                refem: { tirosCabeca: 1, precisao: 0.12, cadencia: 1.6, dano: 8,  esquiva: 0.3 } },
-    medio:   { nome: "Médio",       tempo: 180, patrulha: { gull: 2, hound: 1 }, onda: { gull: 1, hound: 1 }, max: 5,
+    medio:   { nome: "Médio",       maq: { dano: 0.45, fraqueza: 1.7 }, tempo: 180, patrulha: { gull: 2, hound: 1 }, onda: { gull: 1, hound: 1 }, max: 5,
                refem: { tirosCabeca: 2, precisao: 0.2,  cadencia: 1.2, dano: 10, esquiva: 0.5 } },
-    dificil: { nome: "Difícil",     tempo: 150, patrulha: { gull: 3, hound: 2 }, onda: { gull: 2, hound: 1 }, max: 8,
+    dificil: { nome: "Difícil",     maq: { dano: 0.75, fraqueza: 1.1 }, tempo: 150, patrulha: { gull: 3, hound: 2 }, onda: { gull: 2, hound: 1 }, max: 8,
                refem: { tirosCabeca: 3, precisao: 0.32, cadencia: 0.9, dano: 12, esquiva: 0.75 } },
-    treta:   { nome: "Muita treta", tempo: 120, patrulha: { gull: 4, hound: 3 }, onda: { gull: 3, hound: 2 }, max: 12,
+    treta:   { nome: "Muita treta", maq: { dano: 1, fraqueza: 0.9 }, tempo: 120, patrulha: { gull: 4, hound: 3 }, onda: { gull: 3, hound: 2 }, max: 12,
                refem: { tirosCabeca: 4, precisao: 0.45, cadencia: 0.7, dano: 14, esquiva: 1 } },
   };
   const TIMES = {
@@ -434,7 +435,7 @@
             if (mp.capacete) { mp.capacete = false; q = 50; G.hud.message("O capacete segurou o tiro · você perdeu o capacete", 3); if (mp.reservaCapacete > 0) { mp.reservaCapacete--; mp.capacete = true; } }
             else q = 999;
           } else if (m.c === 0 && mp.colete) { mp.colete = false; q *= 0.5; G.hud.message("O colete segurou metade do tiro · você perdeu o colete", 3); if (mp.reservaColete > 0) { mp.reservaColete--; mp.colete = true; } }
-          G.player.damage(q, m.de ? new V3().fromArray(m.de) : null);
+          mp.danoMeu = true; try { G.player.damage(q, m.de ? new V3().fromArray(m.de) : null); } finally { mp.danoMeu = false; }
         }
         break;
       case "baixa": {
@@ -508,7 +509,7 @@
         if (emRodada() && pl.alive && mp.fase === "valendo") {
           const d = pl.eye.distanceTo(p); let visto = true;
           try { visto = G.physics.lineOfSight(p.clone().setY(p.y + 0.4), pl.eye); } catch {}
-          if (d < m.raio && visto) { mp.ultimoDano = { por: m.por === mp.meuId ? null : m.por, t: performance.now() }; pl.damage(m.dano * (1 - d / m.raio), p); }
+          if (d < m.raio && visto) { mp.ultimoDano = { por: m.por === mp.meuId ? null : m.por, t: performance.now() }; mp.danoMeu = true; try { pl.damage(m.dano * (1 - d / m.raio), p); } finally { mp.danoMeu = false; } }
         }
         break;
       }
@@ -589,6 +590,7 @@
         <li><b>Fim da rodada</b> Todos os reféns salvos, um refém morto, um time inteiro caído ou o tempo esgotado.</li>
         <li><b>Sniper</b> Um tiro a cada 3 segundos, zoom de 5x no botão direito. Mata jogador com um tiro, com ou sem colete; refém precisa de dois.</li>
         <li><b>Pistola reserva</b> Quem está só de faca ou de sniper também leva uma pistola de 9 tiros: aperte 2 (ou Q). De pistola na mão os passos fazem barulho; de faca, não.</li>
+        <li><b>Guindaste</b> A torre de escadas do lado sul sobe do chão até o alto: escada de gaiola, cinco lances e uma escada curta para o convés. A 13,5 m há passarelas em volta da torre.</li>
         <li><b>Lugares altos</b> Vários containers, o telhado do galpão e um mirante na torre do guindaste têm escada de mão; no alto do guindaste dá para andar pelo convés, por cima da viga até a ponta sobre a água, e subir no teto da casa de máquinas. Para descer: chegue perto da escada e aperte E. Lá no alto os drones não pegam você.</li>
         <li><b>Pulo</b> Pulando de frente para qualquer coisa até a altura de um container, você sobe nela. Mais alto que isso, só de escada.</li>
         <li><b>Pichar</b> <kbd>P</kbd> abre seis desenhos: clique em um (ou aperte 1 a 6) para pichar parede, chão, teto ou container à sua frente.</li>
@@ -640,7 +642,7 @@
       <div class="mp-dif"><span>Rodadas</span>${mp.anfitriao
         ? `<div class="seg">${[3, 4, 5, 7, 10].map(n => `<button data-mp="rod-${n}" aria-pressed="${n === mp.rodadasTotal}">${n}</button>`).join("")}</div>`
         : `<b>${mp.rodadasTotal}</b>`}</div>
-      <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times. Partida de ${mp.rodadasTotal} rodadas: ganha o time que vencer mais.</p>
+      <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times${d.maq.dano < 0.6 ? " (fracas: incomodam mais do que matam)" : ""}. Partida de ${mp.rodadasTotal} rodadas: ganha o time que vencer mais.</p>
       <div class="mp-acoes mp-acoes-dicas"><button class="btn small" data-mp="dicas">Ver dicas</button></div>
       <div class="mp-acoes">
         ${mp.anfitriao ? `<button class="btn primary" data-mp="comecar">Começar partida</button>`
@@ -842,7 +844,7 @@
   function criarAlvo(j) {      // o que as máquinas do anfitrião enxergam no lugar de um jogador remoto
     return { pos: j.cur, eye: new V3(), vel: new V3(), forward: new V3(0, 0, -1), yaw: 0, pitch: 0, alive: false, crouching: false,
       speed: 0, health: 100, maxHealth: 100, onGround: true, enabled: true,
-      damage(q, de) { if (mp.fase === "valendo" && j.vivo) { if (j.bot) ferirBot(j, q, null); else paraUm(j.id, { t: "dano", q, de: de ? arr(de) : null, por: null }); } },
+      damage(q, de) { q *= (dif().maq || {}).dano || 1; if (mp.fase === "valendo" && j.vivo) { if (j.bot) ferirBot(j, q, null); else paraUm(j.id, { t: "dano", q, de: de ? arr(de) : null, por: null }); } },
       heal() {}, addShake() {}, addRecoil() {} };
   }
   // Monta uma pessoa: pernas com joelho, tronco com cintura, braços com cotovelo, cabeça com rosto, cabelo e roupa.
@@ -878,7 +880,7 @@
         // é feita pelo espaço do mundo: descobre-se quanto cada osso girou em relação ao repouso da animação e aplica-se esse
         // giro ao repouso do modelo, já alinhado na mesma direção. Assim ombro, braço, joelho e pé ficam onde a animação manda.
         let E = null;
-        if (!repousoDe && dados.esq) {
+        if (dados.esq) {
           E = { ordem: [], pai: {}, q: {}, rw: {}, pw: {}, tgt: {}, A: {}, paiT: {} };
           for (const [n, pai, q4, t3] of dados.esq) {
             E.ordem.push(n); E.pai[n] = pai; E.q[n] = new T.Quaternion().fromArray(q4);
@@ -886,17 +888,18 @@
             E.pw[n] = new V3().fromArray(t3); if (pai) E.pw[n].applyQuaternion(E.rw[pai]).add(E.pw[pai]);
           }
           E.F = new T.Quaternion().setFromAxisAngle(new V3(0, 1, 0), Math.atan2(-ex.z, ex.x)); E.Fi = E.F.clone().invert();
-          for (const n of E.ordem) if (ossos[n]) { E.tgt[n] = ossos[n].getWorldQuaternion(new T.Quaternion()); E.paiT[n] = ossos[n].parent.getWorldQuaternion(new T.Quaternion()); }
+          if (repousoDe) { for (const n in repousoDe) if (ossos[n]) ossos[n].quaternion.copy(repousoDe[n]); cena.updateMatrixWorld(true); }      // mede o modelo na pose em T
+          for (const n of E.ordem) { const o = ossos[prefixo + n]; if (o) { E.tgt[n] = o.getWorldQuaternion(new T.Quaternion()); E.paiT[n] = o.parent.getWorldQuaternion(new T.Quaternion()); } }
           const cadeia = [["Spine", "Spine1"], ["Spine1", "Spine2"], ["Spine2", "Neck"], ["Neck", "Head"]];
           for (const L of ["Left", "Right"]) cadeia.push([L + "Shoulder", L + "Arm"], [L + "Arm", L + "ForeArm"], [L + "ForeArm", L + "Hand"], [L + "UpLeg", L + "Leg"], [L + "Leg", L + "Foot"], [L + "Foot", L + "ToeBase"]);
-          for (const [n, f] of cadeia) if (ossos[n] && ossos[f] && E.pw[n] && E.pw[f]) {
-            const dT = ossos[f].getWorldPosition(new V3()).sub(ossos[n].getWorldPosition(new V3())).normalize(), dS = E.pw[f].clone().sub(E.pw[n]).normalize().applyQuaternion(E.F);
+          for (const [n, f] of cadeia) if (ossos[prefixo + n] && ossos[prefixo + f] && E.pw[n] && E.pw[f]) {
+            const dT = ossos[prefixo + f].getWorldPosition(new V3()).sub(ossos[prefixo + n].getWorldPosition(new V3())).normalize(), dS = E.pw[f].clone().sub(E.pw[n]).normalize().applyQuaternion(E.F);
             E.A[n] = new T.Quaternion().setFromUnitVectors(dT, dS);
           }
         }
         const peloMundo = c => {
           const n = Math.max(2, Math.ceil(c.dur * 30) + 1), faixaDe = {}, vals = {}, ant = {}, qa = new T.Quaternion(), qb = new T.Quaternion(), tempos = [];
-          for (const f of c.faixas) { faixaDe[f.o] = f; if (ossos[f.o] && E.rw[f.o]) vals[f.o] = []; }
+          for (const f of c.faixas) { faixaDe[f.o] = f; if (ossos[prefixo + f.o] && E.rw[f.o]) vals[f.o] = []; }
           const amostra = (f, t) => {
             const ts = f.t; if (ts.length === 1 || t <= ts[0]) return qa.fromArray(f.v, 0);
             let i = 0; while (i < ts.length - 2 && ts[i + 1] < t) i++;
@@ -907,17 +910,17 @@
             for (const nome of E.ordem) {
               const loc = E.q[nome].clone(); if (faixaDe[nome]) loc.multiply(amostra(faixaDe[nome], t));
               sw[nome] = E.pai[nome] ? sw[E.pai[nome]].clone().multiply(loc) : loc;
-              if (!ossos[nome]) continue;
+              if (!ossos[prefixo + nome]) continue;
               const w = E.F.clone().multiply(sw[nome]).multiply(E.rw[nome].clone().invert()).multiply(E.Fi);
               if (E.A[nome]) w.multiply(E.A[nome]);
               w.multiply(E.tgt[nome]); tw[nome] = w;
               if (!vals[nome]) continue;
-              const l = (tw[ossos[nome].parent.name] || E.paiT[nome]).clone().invert().multiply(w), a = ant[nome];
+              const l = (tw[ossos[prefixo + nome].parent.name.replace(prefixo, "")] || E.paiT[nome]).clone().invert().multiply(w), a = ant[nome];
               if (a && a.dot(l) < 0) l.set(-l.x, -l.y, -l.z, -l.w);
               ant[nome] = l; vals[nome].push(l.x, l.y, l.z, l.w);
             }
           }
-          return Object.keys(vals).map(o => new T.QuaternionKeyframeTrack(o + ".quaternion", tempos, vals[o]));
+          return Object.keys(vals).map(o => new T.QuaternionKeyframeTrack(prefixo + o + ".quaternion", tempos, vals[o]));
         };
         for (const c of dados.clips) {
           if (!quais(c)) continue;
@@ -1353,6 +1356,11 @@
       if (j.boneco && (j.boneco.time !== j.time || j.boneco.nome !== j.nome)) removerBoneco(j);
       if (!j.boneco) { j.boneco = criarBoneco({ nome: j.nome, css: TIMES[j.time].css, armado: true, time: j.time }); j.boneco.time = j.time; j.boneco.nome = j.nome; }
       if (j.cur.distanceToSquared(j.pos) > 64) j.cur.copy(j.pos); else j.cur.lerp(j.pos, k);   // passagem secreta: aparece direto
+      if (!j.vivo && j.pos.y > -40) {                 // morto: o corpo cai até o piso que houver embaixo
+        if (j.quedaY == null) { j.quedaY = j.cur.y; j.quedaV = 0; }
+        let piso = 0; try { piso = G.physics.groundHeight(j.cur.x, j.cur.z, j.quedaY + 0.3); } catch {}
+        j.quedaV += 20 * dt; j.quedaY = Math.max(piso, j.quedaY - j.quedaV * dt); j.cur.y = j.quedaY;
+      } else j.quedaY = null;
       const b = j.boneco, a = ARMAS[j.arma], v = VARIANTES[j.arma];
       b.grupo.visible = j.pos.y > -40;
       armarBoneco(b, j.vivo ? j.arma : null);
@@ -1447,7 +1455,7 @@
     });
     G.events.on("weapon:fire", ev => {
       const a = ARMAS[mp.arma];
-      if (emRodada() && a && a.rpm) { mp.cadT = 60 / a.rpm - 0.01; if (mp.rajada > 0) mp.rajada--; }
+      if (emRodada() && a && a.rpm) { mp.cadT = 60 / a.rpm - 0.01; mp.pulso = 0; if (mp.rajada > 0) mp.rajada--; }
       if (!emRodada() || !ev || !ev.dir) return;
       const o = ev.origin || G.player.eye, hit = G.physics.raycast(o, ev.dir, 300);
       const fim = hit ? hit.point : o.clone().addScaledVector(ev.dir, 90);
@@ -1529,7 +1537,7 @@
           G.events.emit("enemy:hit", { enemy: e, point: ponto, part: parte || "body" });
           return false;
         }
-        return dano(q, ponto, dir, parte);
+        return dano(emRodada() && !mp.aplicandoMorte ? q * ((dif().maq || {}).fraqueza || 1) : q, ponto, dir, parte);
       };
     }
     const disparar = dbg.ctx.fireBolt;
@@ -1700,6 +1708,17 @@
       // anda no passo do líder: se ele corre, o refém corre; se ficou para trás, aperta o passo
       const wl = Math.hypot(wx, wz), vel = r.estado === 1 ? Math.max(CFG.velRefem * r.civil.vel, Math.min(10, (r.velLider || 0) * 1.08 + (r.atrasoT > 0 ? 1.5 : 0))) : CFG.velRefem * r.civil.vel;
       if (wl > 1) { wx /= wl; wz /= wl; }
+      r.medeT = (r.medeT || 0) - dt;
+      if (r.estado === 1 && r.medeT <= 0) {
+        r.medeT = 0.45;
+        const andou = r.medePos ? Math.hypot(r.pos.x - r.medePos.x, r.pos.z - r.medePos.z) + Math.abs(r.pos.y - r.medePos.y) : 9; (r.medePos || (r.medePos = new V3())).copy(r.pos);
+        if (andou < 0.2 && wl > 0.1 && !subir && r.noChao) {
+          r.preso = (r.preso || 0) + 1;
+          const topo = degrauNaFrente(r.pos, wx / wl, wz / wl, r.pos.y), lider = mp.jogadores.get(r.lider);
+          r.vel.y = topo != null ? Math.sqrt(40 * (topo - r.pos.y + 0.35)) : 6; r.noChao = false;
+          if (r.preso >= 3 && lider) { const lp = posDe(lider); r.pos.set(lp.x - wx / wl * 1.1, lp.y, lp.z - wz / wl * 1.1); r.trilha.length = 0; r.vel.set(0, 0, 0); r.preso = 0; }
+        } else r.preso = 0;
+      }
       r.vel.x = wx * vel; r.vel.z = wz * vel; r.vel.y -= 20 * dt;
       const yAntes = r.pos.y, naEscada = escadaEm(r.pos, 0.8), pendurado = !!naEscada && r.pos.y > naEscada.y0 + 0.2;
       if (subir) {                                      // sobe ou desce a escada de mão atrás de quem segue
@@ -1724,7 +1743,12 @@
     }
   }
   function tentarSalvar(r) {
-    if (r.estado !== 1 || !mp.resgate || Math.hypot(r.pos.x - mp.resgate.x, r.pos.z - mp.resgate.z) >= RAIO_RESGATE) return;
+    if (r.estado !== 1 || !mp.resgate) return;
+    // salvo quando entra no ponto de resgate, ou quando o líder já está lá dentro e o refém vem logo atrás
+    const lider = mp.jogadores.get(r.lider), lp = lider && lider.vivo ? posDe(lider) : null;
+    const dentro = Math.hypot(r.pos.x - mp.resgate.x, r.pos.z - mp.resgate.z) < RAIO_RESGATE;
+    const comLider = lp && Math.hypot(lp.x - mp.resgate.x, lp.z - mp.resgate.z) < RAIO_RESGATE && Math.abs(lp.y - r.pos.y) < 2.5 && Math.hypot(lp.x - r.pos.x, lp.z - r.pos.z) < 7;
+    if (!dentro && !comLider) return;
     r.estado = 2;
     paraTodos({ t: "refem", i: r.i, ev: "salvo", id: r.lider });
     r.lider = null;
@@ -2091,6 +2115,32 @@
     guarda(29.85, -2.3, 39.1, -2.3, Y); guarda(29.85, 2.3, 39.1, 2.3, Y); guarda(39.1, -2.3, 39.1, 2.3, Y);      // ponta da viga, sobre a água
     guarda(28.95, -2.3, 29.85, -2.3, Y); guarda(28.95, 2.3, 29.85, 2.3, Y);
     bloco(grade, 28.95, Y - 0.02, -2.3, 39.1, Y + 0.02, 2.3);
+    // TORRE DE ESCADAS DO PRÓPRIO JOGO (lado sul do guindaste): escada de gaiola do chão ao primeiro patamar, cinco lances em
+    // zigue-zague com patamares, e as passarelas a 13,5 m. Era só enfeite; aqui cada degrau e cada piso ganha colisão.
+    {
+      const T0 = 6.15, D0 = 6.97, C0 = 7.8, GA = [19.4, 20.6], JA = [26.4, 27.6], K = [3.6, 6.9, 10.2, 13.5, 16.8, 20.1], inv = { surface: "metal", playerOnly: true };
+      for (const b of [...fis.boxes]) if (Math.abs(b.min.x - 18.63) < 0.05 && Math.abs(b.max.y - 4.7) < 0.05 && Math.abs(b.min.z - 6.95) < 0.05) fis.removeBox(b);      // a gaiola era um bloco maciço
+      ESCADAS.push({ x: 18.93, z: 7.35, y0: 1.5, y1: K[0] + 0.45, nx: 1, nz: 0, d: 0.4 }); fis.addBox([19.34, 1.5, 6.95], [19.4, K[0] - 0.2, 7.75], inv);      // começa em cima do truque da perna (1,5 m: dá para subir pulando)
+      const lance = (xa, ya, xb, yb, za, zb) => { const n = Math.max(2, Math.round((yb - ya) / 0.2)); for (let k = 0; k < n; k++) { const x0 = xa + (xb - xa) * k / n, x1 = xa + (xb - xa) * (k + 1) / n, topo = ya + (yb - ya) * (k + 1) / n; fis.addBox([Math.min(x0, x1), topo - 0.24, za], [Math.max(x0, x1), topo, zb], solido); } };
+      for (let k = 0; k < 6; k++) { const L = k % 2 === 0 ? GA : JA; fis.addBox([L[0], K[k] - 0.2, T0], [L[1], K[k], C0], solido); }      // patamares
+      for (let k = 0; k < 5; k++) k % 2 === 0 ? lance(GA[1], K[k], JA[0], K[k + 1], T0, D0) : lance(JA[0], K[k], GA[1], K[k + 1], D0, C0);
+      lance(JA[0], K[5], 23.4, 21.9, D0, C0); fis.addBox([22.5, 21.7, 5.8], [23.4, 21.9, C0], solido);
+      fis.addBox([22.45, 21.9, 5.8], [22.5, 23, C0], inv); fis.addBox([23.4, 21.9, 5.8], [23.45, 23, D0], inv);                 // último lance e a passarela do alto
+      // guarda invisível nos lados de fora (onde o desenho já tem corrimão), para ninguém cair dos lances
+      fis.addBox([GA[0], K[0], C0], [JA[1], 23, C0 + 0.05], inv); fis.addBox([JA[1], K[0], T0], [JA[1] + 0.05, 23, C0], inv); fis.addBox([GA[0] - 0.05, K[0] + 2.1, T0], [GA[0], 23, C0], inv);
+      fis.addBox([GA[1], K[0], T0 - 0.05], [JA[0], 21.9, T0], inv); fis.addBox([23.4, 21.9, T0 - 0.05], [JA[0], 23, T0], inv); fis.addBox([GA[1], 21.9, T0 - 0.05], [22.5, 23, T0], inv);
+      for (const k of [0, 2, 4]) fis.addBox([GA[0], K[k], T0 - 0.05], [GA[1], K[k] + 1.1, T0], inv);
+      for (const k of [1, 5]) fis.addBox([JA[0], K[k], T0 - 0.05], [JA[1], K[k] + 1.1, T0], inv);
+      // do alto da torre (21,9 m) uma escada de mão curta sobe na viga de borda sul; dali, dois degraus descem para o convés
+      const ec = { x: 22.95, z: 6.25, y0: 21.9, y1: 23.92, nx: 0, nz: -1, d: 0.4 }; ESCADAS.push(ec);
+      for (const k of [-0.24, 0.24]) bloco(amarelo, ec.x + k - 0.025, 21.9, 5.825, ec.x + k + 0.025, 24.7, 5.875);
+      for (let y = 22.2; y < 23.9; y += 0.3) bloco(grade, ec.x - 0.255, y - 0.015, 5.835, ec.x + 0.255, y + 0.015, 5.865);
+      bloco(grade, 22.4, Y, 4.7, 23.5, Y + 0.67, 5.0, true); bloco(grade, 22.4, Y, 4.4, 23.5, Y + 0.34, 4.7, true);
+      // nível de 13,5 m: as vigas e as passarelas que o desenho já mostra
+      for (const z of [-5.85, 4.95]) fis.addBox([18.5, 12.5, z], [28.5, 13.5, z + 0.9], solido);
+      for (const x of [18.05, 28.05]) { fis.addBox([x, 12.5, -5.4], [x + 0.9, 13.5, 5.4], solido); fis.addBox([x, 3.6, -4.8], [x + 0.9, 4.6, 4.8], solido); }
+      fis.addBox([18.95, 13.4, -4.6], [19.75, 13.5, 4.05], solido); fis.addBox([JA[0], 13.4, 4.95], [JA[1], 13.5, T0], solido);
+    }
     // teto da casa de máquinas (26 m): escada de mão na parede leste e guarda-corpo em volta
     const eh = { x: 20.85, z: 0, y0: Y, y1: 26.1, nx: -1, nz: 0, d: 0.4 }; ESCADAS.push(eh);
     for (const k of [-0.24, 0.24]) bloco(amarelo, eh.x - 0.4 - 0.025, Y, k - 0.025, eh.x - 0.4 + 0.025, 26.9, k + 0.025);
@@ -2348,7 +2398,10 @@
     mp.deitado = deitar;
     let e = escadaEm(p.pos);
     const sobe = inp.move.y;
-    if (e && p.onGround && p.pos.y < e.y0 + 0.15 && !(sobe > 0.3 && p.forward.x * e.nx + p.forward.z * e.nz > 0.3)) e = null;   // no chão, só sobe quem vai de frente para ela
+    if (e && p.onGround && p.pos.y < e.y0 + 0.15) {
+      const rx = e.x + e.nx * e.d - p.pos.x, rz = e.z + e.nz * e.d - p.pos.z, rl = Math.hypot(rx, rz) || 1;
+      if (!(sobe > 0.3 && (p.forward.x * e.nx + p.forward.z * e.nz > 0.3 || (p.forward.x * rx + p.forward.z * rz) / rl > 0.5))) e = null;
+    }   // no chão, só sobe quem vai de frente para ela
     const querDescer = sobe * (p.pitch > -0.5 ? 1 : -1) < -0.3;
     if (e && p.onGround && p.pos.y > e.y1 - 0.3 && !querDescer && Math.hypot(p.pos.x - e.x, p.pos.z - e.z) > 0.3) e = null;     // em pé na beira do topo
     if (!e && p.onGround && !deitar)                   // no alto de uma escada: E já põe a pessoa nela, pronta para descer
@@ -2382,7 +2435,7 @@
       const caiu = mp.quedaTopo - p.pos.y;               // quanto mais alto, mais dano: da altura de um container tira pouco, do telhado quase tudo
       if (caiu > QUEDA.altura && mp.fase === "valendo") {
         const perde = Math.round((p.maxHealth || 100) * Math.min(1, (caiu - QUEDA.folga) * QUEDA.porMetro));
-        mp.ultimoDano = { por: "queda", t: performance.now() }; p.damage(perde, null); G.hud.message("Queda de " + caiu.toFixed(1) + " m: -" + perde + " de vida", 2.5);
+        mp.ultimoDano = { por: "queda", t: performance.now() }; mp.danoMeu = true; try { p.damage(perde, null); } finally { mp.danoMeu = false; } G.hud.message("Queda de " + caiu.toFixed(1) + " m: -" + perde + " de vida", 2.5);
       }
       mp.quedaTopo = p.pos.y;
     } else {
@@ -3145,6 +3198,9 @@
     if (a && a.faca && vale && gatilho && !mp.gatilhoAntes && mp.cadT <= 0) { mp.cadT = FACA.espera; facada(); }
     if (G.input.sprint && G.input.move.y > 0.55) pode = false;        // correndo a arma abaixa: não atira
     if (mp.trocaPara) pode = false;                        // no meio da troca não atira
+    // a arma do jogo só dispara quando o gatilho "desce"; se o aperto cai antes de ela estar pronta, ele se perde e a rajada
+    // para. Por isso, enquanto não sai o tiro, o gatilho é solto e reapertado a cada dois quadros.
+    if (pode) { mp.pulso = (mp.pulso || 0) + 1; if (mp.pulso > 2) { pode = false; mp.pulso = 0; } } else mp.pulso = 0;
     mp.gatilhoAntes = gatilho; G.input.fire = pode;
     if (mp.arma !== mp.armaPente) {                      // trocou de arma: cada uma guarda a sua munição e o seu tempo de espera
       const antes = ARMAS[mp.armaPente], agora = performance.now() / 1000;
@@ -3155,7 +3211,7 @@
       if (a && !a.faca) { w.magSize = a.pente; w.ammo = mp.municao[mp.arma] != null ? mp.municao[mp.arma] : a.pente; }
       mp.cadT = Math.max(0.3, (mp.prontaEm[mp.arma] || 0) - agora);
     }
-    if (a && !a.faca) { w.magSize = a.pente; if (w.ammo > a.pente) w.ammo = a.pente; w.reserve = 150; }
+    if (a && !a.faca) { w.magSize = a.pente; if (w.ammo > a.pente) w.ammo = a.pente; w.reserve = 150; try { if (typeof w.rpm === "number") w.rpm = Math.max(a.rpm, a.modo === "auto" ? 600 : a.rpm); } catch {} }
     if (a && !a.faca && vale && w.ammo <= 0 && w.state !== "reloading" && !mp.trocaPara) { try { w.reloadNow(); } catch {} }      // pente vazio: recarrega sozinho
     if (!mp.linhaMunicao) mp.linhaMunicao = document.querySelector(".h-ammo-row");
     if (mp.linhaMunicao) mp.linhaMunicao.style.visibility = a && a.faca ? "hidden" : "";                                         // de faca não há munição para mostrar       // munição infinita: R sempre recarrega
@@ -3432,6 +3488,8 @@
     satOriginal = typeof (G.render.post || {}).saturation === "number" ? G.render.post.saturation : 1;
     rotuloHud = document.querySelector(".h-relays span");
     instalarTiros(); instalarMaquinas(); montarCenario(); carregarModelos();
+    { const pd = G.player.damage.bind(G.player);      // o que não vem do multiplayer (tiro de drone, mordida de cão) pesa conforme a dificuldade
+      G.player.damage = (q, de) => pd(emRodada() && !mp.danoMeu ? q * ((dif().maq || {}).dano || 1) : q, de); }
     const armaAtualiza = G.weapon.update;            // deitado, a câmera (e de onde sai o tiro) desce até perto do chão
     G.weapon.update = function (...a) {
       if (emRodada() && mp.deitado && G.player.alive) { G.camera.position.y -= 0.55; G.player.eye.y -= 0.55; }
