@@ -596,14 +596,14 @@
         <li><b>Objetivo</b> Policiais soltam os reféns (segure E) e levam ao ponto de resgate mostrado no painel da sala. Terroristas impedem até o tempo acabar.</li>
         <li><b>Fim da rodada</b> Todos os reféns salvos, um refém morto, um time inteiro caído ou o tempo esgotado.</li>
         <li><b>Sniper</b> Um tiro a cada 3 segundos, zoom de 5x no botão direito. Mata jogador com um tiro, com ou sem colete; refém precisa de dois.</li>
-        <li><b>Pistola reserva</b> Quem está só de faca ou de sniper também leva uma pistola de 9 tiros: aperte 2 (ou Q). De pistola na mão os passos fazem barulho; de faca, não.</li>
+        <li><b>Teclas das armas</b> <kbd>1</kbd> arma principal · <kbd>2</kbd> pistola · <kbd>3</kbd> faca · <kbd>4</kbd> granada · <kbd>Q</kbd> volta para a anterior. Pistola (9 tiros) e faca todo mundo tem sempre; do chão você só pode levar uma arma principal.</li>
         <li><b>Guindaste</b> A torre de escadas do lado sul sobe do chão até o alto: escada de gaiola, cinco lances e uma escada curta para o convés. A 13,5 m há passarelas em volta da torre.</li>
         <li><b>Lugares altos</b> Vários containers, o telhado do galpão e um mirante na torre do guindaste têm escada de mão; no alto do guindaste dá para andar pelo convés, por cima da viga até a ponta sobre a água, e subir no teto da casa de máquinas. Para descer: chegue perto da escada e aperte E. Lá no alto os drones não pegam você.</li>
         <li><b>Pulo</b> Pulando de frente para qualquer coisa até a altura de um container, você sobe nela. Mais alto que isso, só de escada.</li>
         <li><b>Pichar</b> <kbd>P</kbd> abre seis desenhos: clique em um (ou aperte 1 a 6) para pichar. O desenho vai para onde a mira estava quando você apertou P (parede, chão, teto ou container, até 7 m).</li>
         <li><b>Pátio novo</b> O mapa cresceu para o sul: mais espaço aberto, poucos containers e muretas para se proteger.</li>
         <li><b>Saída secreta</b> Em cima da casinha dos reféns há um alçapão: cada vez ele leva a um lugar diferente do mapa.</li>
-        <li><b>Armas</b> Todos nascem com a faca. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
+        <li><b>Armas</b> Todos nascem com a faca e a pistola. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
         <li><b>Explosivos</b> Pegue passando por cima. 4 joga a granada; B arma a bomba no chão onde você está; V arma a bomba-relógio (T muda o tempo). Qualquer um desarma segurando E perto dela.</li>
         <li><b>Modo furtivo</b> Com a faca na mão ninguém ouve seus passos, nem os bots. Eles só veem o que está à frente deles; de arma na mão, ouvem você andando por perto e viram. Drones e cães só pegam quem está de faca se derem de cara com ele. Mirando com a sniper, máquinas e bots não veem você.</li>
         <li><b>Bots</b> Quando a partida começa, cada time é completado com bots até ficar com 5 (no máximo 10 na partida). O nome deles começa com "Bot". Eles só combatem, não mexem nos reféns, e ficam mais difíceis conforme a dificuldade da sala.</li>
@@ -849,7 +849,7 @@
     const t = eu() && TIMES[eu().time];
     if (t && meu) G.hud.radio("Você está com os " + t.nome + ". " + t.objetivo + ".", CFG.tempoPreparo + 1);
     else G.hud.message("Você entra na próxima rodada", 6);
-    if (meu) G.hud.message((meu[1] > 1 ? "Armas no cabide sob a janela" : "Pegue uma arma no chão") + " · G solta · R recarrega · Q troca de arma · C corre", CFG.tempoPreparo + 6);
+    if (meu) G.hud.message((meu[1] > 1 ? "Armas no cabide sob a janela" : "Pegue uma arma no chão") + " · 1 arma · 2 pistola · 3 faca · 4 granada · G solta · C corre", CFG.tempoPreparo + 6);
     gradesVazadas(true); G.player.tuning.sprint = G.player.tuning.walk * 2;      // correr = o dobro de andar
     mp.quedaTopo = meu ? meu[1] : 0; mp.naEscada = null; mp.deitarManual = false;
     if (!meu) p.alive = false;
@@ -3313,7 +3313,7 @@
   // troca de arma como no CS: Q alterna com a última usada, 1 = arma pega no chão, 2 = pistola reserva, 3 = faca.
   // A pistola reserva (9 tiros) só existe para quem não tem arma do chão ou está de sniper.
   const TROCA = { desce: 0.18, sobe: 0.24 };      // segundos para a arma descer e para a outra subir
-  function temReserva() { return !mp.principal || !!ARMAS[mp.principal].mata; }
+  function temReserva() { return true; }      // pistola e faca são de todos, sempre; do chão só se leva UMA arma principal
   function trocarArma(para) {
     const t = eu() && eu().time; if (!t || !para || para === mp.arma || !ARMAS[para]) return;
     if (ARMAS[para].reserva && !temReserva()) return;
