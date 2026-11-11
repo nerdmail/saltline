@@ -23,7 +23,10 @@
     tempoPegar: 1.2,           // segundos segurando E para soltar um refém
     velRefem: 3.6,             // metros por segundo
     maxJogadores: 10,
-    danoCabeca: 2,             // multiplicador de tiro na cabeça
+    danoCabeca: 2,             // multiplicador de tiro na cabeça (só para os bagos da 12)
+    // tiro de arma em jogador: no tronco tira 35; em perna ou pé, de 25 a 30; na cabeça mata. O colete some segurando o primeiro
+    // tiro no tronco e o capacete some segurando o primeiro na cabeça; depois disso o dano conta normalmente.
+    danoTronco: 35, danoMembro: [25, 30],
     // explosivos: qualquer jogador pega e usa; ficam espalhados pelo mapa, longe uns dos outros, em pontos sorteados a cada rodada
     // coletes e capacetes: o dobro do número de jogadores de cada um. O colete segura metade de um tiro no corpo e o capacete
     // transforma um tiro na cabeça (que mataria) em metade da vida; os dois se perdem ao segurar o tiro.
@@ -300,7 +303,7 @@
         const alvo = mp.jogadores.get(m.em);
         if (mp.fase === "valendo" && alvo && alvo.vivo && j.vivo && alvo.time !== j.time)
           if (alvo.bot) ferirBot(alvo, Math.min(600, +m.q || 0), id);
-          else paraUm(alvo.id, { t: "dano", q: Math.min(600, +m.q || 0), de: m.de, por: id, c: m.c === 1 ? 1 : m.c === 0 ? 0 : undefined });
+          else paraUm(alvo.id, { t: "dano", q: Math.min(600, +m.q || 0), de: m.de, por: id, c: m.c === 1 ? 1 : m.c === 0 ? 0 : m.c === 2 ? 2 : undefined });
         break;
       }
       case "acertoRefem":
@@ -431,11 +434,11 @@
         if (emRodada() && G.player.alive) {
           mp.ultimoDano = { por: m.por, t: performance.now() };
           let q = m.q;
-          if (m.c === 1) {                       // tiro na cabeça: mata, a não ser que o capacete segure (aí tira metade da vida)
-            if (mp.capacete) { mp.capacete = false; q = 50; G.hud.message("O capacete segurou o tiro · você perdeu o capacete", 3); if (mp.reservaCapacete > 0) { mp.reservaCapacete--; mp.capacete = true; } }
+          if (m.c === 1) {                       // tiro na cabeça: mata, a não ser que o capacete segure (ele some e o tiro não tira vida)
+            if (mp.capacete) { mp.capacete = false; q = 0; G.hud.message("O capacete segurou o tiro · você perdeu o capacete", 3); if (mp.reservaCapacete > 0) { mp.reservaCapacete--; mp.capacete = true; } }
             else q = 999;
-          } else if (m.c === 0 && mp.colete) { mp.colete = false; q *= 0.5; G.hud.message("O colete segurou metade do tiro · você perdeu o colete", 3); if (mp.reservaColete > 0) { mp.reservaColete--; mp.colete = true; } }
-          mp.danoMeu = true; try { G.player.damage(q, m.de ? new V3().fromArray(m.de) : null); } finally { mp.danoMeu = false; }
+          } else if (m.c === 0 && mp.colete) { mp.colete = false; q = 0; G.hud.message("O colete segurou o tiro · você perdeu o colete", 3); if (mp.reservaColete > 0) { mp.reservaColete--; mp.colete = true; } }      // tronco: o colete some segurando o tiro
+          if (q > 0) { mp.danoMeu = true; try { G.player.damage(q, m.de ? new V3().fromArray(m.de) : null); } finally { mp.danoMeu = false; } }
         }
         break;
       case "baixa": {
@@ -603,7 +606,8 @@
         <li><b>Quem cai</b> Fica assistindo um jogador vivo até a rodada acabar. A barra de espaço troca de jogador.</li>
         <li><b>Placar</b> Segure Tab para ver quem está vivo, os abates e as vitórias de cada time.</li>
         <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q troca de arma (1 arma, 2 pistola, 3 faca) · 4 granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
-        <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura metade de um tiro no corpo; o capacete salva de um tiro na cabeça. Cada um aguenta um tiro só.</li>
+        <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura um tiro no tronco e some; o capacete segura um tiro na cabeça e some.</li>
+        <li><b>Dano de tiro</b> No tronco tira 35; em perna ou pé, de 25 a 30; na cabeça, sem capacete, mata.</li>
         <li><b>Sala dos reféns</b> Tem 4 portas secretas numeradas (cada uma leva sempre ao mesmo lugar) e uma escada de mão até o duto de ar.</li>
         <li><b>Duto e telhado</b> No duto só se rasteja; ele leva a escadas para o chão e para o telhado. Dentro dele não dá para virar: S anda de ré. Na escada: W sobe, S desce. No telhado, as entradas têm moldura listrada e uma luz; uma delas é uma escada que desce por dentro do galpão.</li>
         <li><b>Queda</b> Descer sem escada machuca: da altura de um container tira pouco; do telhado, quase tudo.</li>
@@ -1408,7 +1412,7 @@
       const t = raioEmCilindro(o, dir, alcance, base, altura);
       if (t >= 0 && (!melhor || t < melhor.dist)) {
         const y = o.y + dir.y * t;
-        melhor = { dist: t, cabeca: y > base.y + altura - 0.32, ponto: new V3(o.x + dir.x * t, y, o.z + dir.z * t), ...extra };
+        melhor = { dist: t, cabeca: y > base.y + altura - 0.32, perna: altura > 1 && y < base.y + altura * 0.42, ponto: new V3(o.x + dir.x * t, y, o.z + dir.z * t), ...extra };
       }
     };
     for (const j of mp.jogadores.values()) if (j.id !== mp.meuId && j.vivo && j.time !== meuTime) testar(j.cur, j.deitado ? 0.6 : j.agachado ? 1.15 : 1.7, { j });
@@ -1422,9 +1426,10 @@
       if (h) {
         const parede = G.physics.raycast(o, dir, alcance), maq = G.enemies.raycast(o, dir, parede ? parede.dist : alcance);
         if ((!parede || h.dist < parede.dist) && (!maq || h.dist < maq.dist)) {
-          const q = (opt.damage || 28) * (h.cabeca ? CFG.danoCabeca : 1), sniper = !!(ARMAS[mp.arma] && ARMAS[mp.arma].mata);
+          const sniper = !!(ARMAS[mp.arma] && ARMAS[mp.arma].mata), bago = !!opt.bago;
+          const q = bago ? opt.damage * (h.cabeca ? CFG.danoCabeca : 1) : h.cabeca ? 999 : h.perna ? Math.round(CFG.danoMembro[0] + Math.random() * (CFG.danoMembro[1] - CFG.danoMembro[0])) : CFG.danoTronco;
           G.combat.stats.shots++; G.combat.stats.hits++;
-          if (h.j) enviar(sniper ? { t: "acerto", em: h.j.id, q: 999, de: arr(o) } : { t: "acerto", em: h.j.id, q, de: arr(o), c: h.cabeca ? 1 : 0 });   // a sniper mata com um tiro, com ou sem colete
+          if (h.j) enviar(sniper ? { t: "acerto", em: h.j.id, q: 999, de: arr(o) } : { t: "acerto", em: h.j.id, q, de: arr(o), c: h.cabeca ? 1 : h.perna ? 2 : 0 });   // a sniper mata com um tiro, com ou sem colete
           else enviar({ t: "acertoRefem", i: h.r.i, c: h.cabeca ? 1 : 0, s: sniper ? 1 : 0 });      // refém só se fere com tiro na cabeça; no corpo, só perde o colete
           G.hud.hitmarker(h.cabeca ? "weak" : "hit");
           try { G.fx.sparks(h.ponto, dir.clone().negate(), 5); } catch {}
@@ -1442,7 +1447,7 @@
       let primeiro = null;
       for (let k = 0; k < a.chumbo; k++) {            // a 12: vários bagos espalhados, só de perto
         const d = dir.clone(); d.x += (Math.random() - 0.5) * 0.11; d.y += (Math.random() - 0.5) * 0.08; d.z += (Math.random() - 0.5) * 0.11; d.normalize();
-        const r = umTiro(o, d, { ...opt, damage: DANO_CHUMBO, range: a.alcance });
+        const r = umTiro(o, d, { ...opt, damage: DANO_CHUMBO, range: a.alcance, bago: true });
         if (k) try { G.fx.tracer(o.clone().addScaledVector(d, 0.6), r && r.point ? r.point : o.clone().addScaledVector(d, a.alcance)); } catch {}
         primeiro = primeiro || r;
       }
