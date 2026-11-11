@@ -61,7 +61,7 @@
   const POLICIAIS_NA_SALA = [[-11.1, -25.2], [-11.1, -26.6]];      // os dois primeiros Policiais já começam com os reféns
   const NASCER_TERRORISTAS = [[27.4, 11.6], [20.9, 14.7], [23.4, 23.2], [18, 24.4], [27.2, -12.6], [29, 14], [27, 8], [18, 22.2]];   // espalhados no lado leste (cais)
   // posições no mapa [x, z]. O galpão (sala dos reféns) vai de x -16 a 12 e de z -28 a -11.
-  const REFENS = [[-14.5, -25.9], [-13.5, -26.1], [-13.2, -25.2]];      // dentro da sala, longe da mesa e do cabide de armas
+  const REFENS = [[-8.4, -26.6], [-7.3, -27.0], [-6.3, -26.5]];        // no fundo da parte nova da sala, longe da porta de entrada e das portas secretas
   // Duto de ar: sai do teto da sala dos reféns e dá a volta por dentro do galpão, lá no alto. Dentro dele só se anda deitado.
   // zn/zs = trechos norte e sul, xe/xw = trechos leste e oeste; a boca norte fica na beira leste do teto da sala (x0)
   // e a boca oeste na beira sul (zb). Chão do duto em y, com alt de altura por dentro.
@@ -88,7 +88,8 @@
   // carro: um por rodada, perto do meio do mapa. Cinco lugares [x, y, z] no espaço do carro (frente = -z, direita = +x):
   // motorista, passageiro e três em cima da carroceria. Anda só no chão, na velocidade de uma pessoa (anda ou corre).
   // Quem entra primeiro fica com ele para o seu time; o outro time só entra quando o carro estiver vazio.
-  const CARRO = { lugares: [[-0.5, 0.72, -1.25], [0.5, 0.72, -1.25], [-0.6, 2.08, 0.6], [0, 2.08, 1.25], [0.6, 2.08, 0.6]], alcance: 3.4, anda: 3.8, corre: 7.6, re: 3, giro: 1.8, comprimento: 4.4 };
+  // DESLIGADO a pedido (ligado: false): o carro não aparece nas rodadas. Para voltar, troque para ligado: true.
+  const CARRO = { ligado: false, lugares: [[-0.5, 0.72, -1.25], [0.5, 0.72, -1.25], [-0.6, 2.08, 0.6], [0, 2.08, 1.25], [0.6, 2.08, 0.6]], alcance: 3.4, anda: 3.8, corre: 7.6, re: 3, giro: 1.8, comprimento: 4.4 };
   const QUEDA = { altura: 3.2, dano: 0.5 };     // cair de mais que isso tira metade da vida (só de jogador; refém não se machuca)
   const MESA = [-13.9, -12.1, -26.68];                                  // mesa encostada na parede norte: x de, x até, z da frente
   // quem são os reféns, na ordem das posições acima: cor da roupa, cabelo, tamanho e ritmo de caminhada
@@ -580,8 +581,7 @@
         <li><b>Objetivo</b> Policiais soltam os reféns (segure E) e levam ao ponto de resgate mostrado no painel da sala. Terroristas impedem até o tempo acabar.</li>
         <li><b>Fim da rodada</b> Todos os reféns salvos, um refém morto, um time inteiro caído ou o tempo esgotado.</li>
         <li><b>Sniper</b> Um tiro por vez, zoom de 5x no botão direito. Mata jogador com um tiro, com ou sem colete; refém precisa de dois.</li>
-        <li><b>Carro</b> Há um por rodada, perto do meio do mapa. F entra e sai; cabem 5 (reféns também). Quem entra primeiro fica com ele: o outro time só entra com o carro vazio.</li>
-        <li><b>Containers</b> Vários têm escada de mão para subir e atirar lá de cima.</li>
+        <li><b>Lugares altos</b> Vários containers, o telhado do galpão e um mirante na torre do guindaste têm escada de mão. Para descer: olhe para baixo e aperte W.</li>
         <li><b>Armas</b> Todos nascem com a faca. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
         <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
         <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura metade de um tiro no corpo; o capacete salva de um tiro na cabeça. Cada um aguenta um tiro só.</li>
@@ -653,7 +653,7 @@
       r.pos.set(REFENS[i][0], SALA.chao, REFENS[i][1]); r.cur.copy(r.pos); r.vel.set(0, 0, 0); r.casa.copy(r.pos); r.trilha = [];
       r.estado = 0; r.lider = null; r.hp = dif().refem.tirosCabeca; r.jaSolto = false; r.caminho = null; r.caminhoT = 0;
       r.passoT = Math.random(); r.passo = [0, 0]; r.ladoT = 0; r.lado = 1; r.tiroT = 1.5; r.noChao = true;
-      r.yaw = -Math.PI / 2; r.miraT = 0; r.prot = 3;        // começa de colete (1) e capacete (2)        // de frente para a porta e para os Policiais
+      r.yaw = Math.PI * 0.75; r.miraT = 0; r.prot = 3;        // começa de colete (1) e capacete (2)        // de frente para a porta e para os Policiais
     });
   }
   // só o anfitrião
@@ -786,6 +786,7 @@
   // animação: a passada e os braços dele são movidos pelo código. A cor da roupa muda de um para outro.
   let soldado = null, civilModelo = null;
   const CORPO_CIVIL = { cabeca: 1.72, raio: 0.142, peito: 0.15, tronco: 1.29 };      // onde ficam a cabeça e o tronco do modelo civil (m)
+  const MAO = { x: 0.03, y: -0.06, z: 0.17, giro: -1.5, eixo: "x", fecha: 1.1 };      // como a mão do modelo civil pega a arma
   const VIRAR_CIVIL = true;        // true se, com as animações adaptadas, o modelo civil sair virado para trás
   async function carregarModelos() {
     try {
@@ -798,7 +799,7 @@
         const c = await carregador.loadAsync("./modelos/civil2.glb");
         g.scene.updateMatrixWorld(true); c.scene.updateMatrixWorld(true);
         const clips = [];          // sem animação pronta: pernas e braços são movidos pelo código (ver posarModelo)
-        try { const k = await carregador.loadAsync("./modelos/carro.glb"); montarCarro(k); } catch (e) { console.warn("[mp] o modelo do carro não carregou; fica o carro feito por código", e); }
+        if (CARRO.ligado) try { const k = await carregador.loadAsync("./modelos/carro.glb"); montarCarro(k); } catch (e) { console.warn("[mp] o modelo do carro não carregou; fica o carro feito por código", e); }
         civilModelo = { cena: c.scene, clips, clonar: SU.clone, mats: {}, virado: VIRAR_CIVIL };
         for (const j of mp.jogadores.values()) if (j.time === "t") removerBoneco(j);
         for (const r of mp.refens) if (r.civil.modelo) { const visivel = r.boneco.grupo.visible; removerBoneco(r); r.boneco = criarBoneco({ armado: false, civil: r.civil }); r.boneco.grupo.visible = visivel; }
@@ -855,14 +856,14 @@
       }
       coleteM = new T.Group();
       const lona = pano(time ? 0x20242a : 0x2b3138), bolso = pano(0x3f4650);
-      const corpo = malha(new T.CylinderGeometry(0.235, 0.215, 0.4, 18), lona); corpo.scale.z = 0.8; coleteM.add(corpo);
-      for (const x of [-0.11, 0.11]) { const a = malha(new T.BoxGeometry(0.08, 0.07, 0.3), lona); a.position.set(x, 0.215, 0); coleteM.add(a); }
-      for (const x of [-0.11, 0, 0.11]) { const p = malha(new T.BoxGeometry(0.09, 0.11, 0.05), bolso); p.position.set(x, -0.08, -0.195); coleteM.add(p); }
+      const corpo = malha(new T.CylinderGeometry(0.19, 0.172, 0.36, 18), lona); corpo.scale.z = 0.8; coleteM.add(corpo);
+      for (const x of [-0.11, 0.11]) { const a = malha(new T.BoxGeometry(0.065, 0.06, 0.26), lona); a.position.set(x * 0.85, 0.195, 0); coleteM.add(a); }
+      for (const x of [-0.11, 0, 0.11]) { const p = malha(new T.BoxGeometry(0.075, 0.09, 0.04), bolso); p.position.set(x * 0.85, -0.08, -0.158); coleteM.add(p); }
       por("Spine1", coleteM, 0, C.tronco, 0); coleteM.visible = false;
       capaceteM = new T.Group();
-      const casco = malha(new T.SphereGeometry(C.raio + 0.02, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), new T.MeshStandardMaterial({ color: time ? 0x2b2d24 : 0x3f4a3a, roughness: 0.5, metalness: 0.25 })); casco.scale.set(0.98, 1.05, 1.1); capaceteM.add(casco);
-      for (const x of [-(C.raio + 0.012), C.raio + 0.012]) { const j = malha(new T.BoxGeometry(0.012, 0.12, 0.03), pano(0x15171a)); j.position.set(x, -0.06, 0); capaceteM.add(j); }
-      por("Head", capaceteM, 0, C.cabeca + 0.03, -0.01); capaceteM.visible = false;
+      const casco = malha(new T.SphereGeometry(time ? C.raio + 0.02 : 0.128, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), new T.MeshStandardMaterial({ color: time ? 0x2b2d24 : 0x3f4a3a, roughness: 0.5, metalness: 0.25 })); casco.scale.set(0.98, 1.05, 1.1); capaceteM.add(casco);
+      for (const x of time ? [-(C.raio + 0.012), C.raio + 0.012] : [-0.118, 0.118]) { const j = malha(new T.BoxGeometry(0.012, 0.12, 0.03), pano(0x15171a)); j.position.set(x, -0.06, 0); capaceteM.add(j); }
+      por("Head", capaceteM, 0, C.cabeca + (time ? 0.03 : 0.085), time ? -0.01 : 0.01); capaceteM.visible = false;
     }
     const pivo = new T.Group(); pivo.position.set(0, 1.4, -0.02); modelo.add(pivo);          // a arma gira aqui, na altura do ombro
     const lado = fonte.virado ? -1 : 1, arma = new T.Group(); arma.position.set(0.15 * lado, -0.1, -0.38); pivo.add(arma);   // lado: no modelo virado, a mão direita fica do outro lado
@@ -876,6 +877,7 @@
     for (const [n, f] of [["LeftUpLeg", "LeftLeg"], ["LeftLeg", "LeftFoot"], ["RightUpLeg", "RightLeg"], ["RightLeg", "RightFoot"], ["LeftArm", "LeftForeArm"], ["LeftForeArm", "LeftHand"], ["RightArm", "RightForeArm"], ["RightForeArm", "RightHand"]])
       if (ossos[n] && ossos[f]) repouso[n] = { q: qm.clone().multiply(ossos[n].getWorldQuaternion(new T.Quaternion())), dir: ossos[f].getWorldPosition(new V3()).sub(ossos[n].getWorldPosition(new V3())).applyQuaternion(qm).normalize() };
     const b = { grupo, modelo, mixer, acoes, repouso, semClipes: !fonte.clips.length, ossos, pivo, arma, placa, capacete: capaceteM || visor || new T.Group(), colete: coleteM || new T.Group(), bone: new T.Group(), cordas: [], armaChave: null, lado,
+      maoRepouso: ossos.RightHand ? ossos.RightHand.quaternion.clone() : null,
       braco: dist("RightArm", "RightForeArm"), ante: dist("RightForeArm", "RightHand"), ult: new V3(), andar: 0, fase: 0 };
     if (civil) { armarBoneco(b, "p_pistola"); arma.visible = false; }
     return b;
@@ -935,7 +937,11 @@
     b.arma.visible = comArma;
     if (comArma) {
       b.grupo.updateMatrixWorld(true);
-      alcancar(b, "Right", b.arma.localToWorld(new V3(0, -0.09, 0.07)), b.lado);
+      alcancar(b, "Right", b.arma.localToWorld(b.semClipes ? new V3(MAO.x * b.lado, MAO.y, MAO.z) : new V3(0, -0.09, 0.07)), b.lado);
+      if (b.semClipes && b.maoRepouso) {
+        b.ossos.RightHand.quaternion.copy(b.maoRepouso).multiply(new G.THREE.Quaternion().setFromAxisAngle(new V3(0, 1, 0), MAO.giro));
+        for (const d of ["Index", "Middle", "Ring", "Pinky"]) for (const k of [1, 2, 3]) { const o = b.ossos["RightHand" + d + k]; if (o) o.rotation[MAO.eixo] = MAO.fecha; }
+      }
       if (longa) alcancar(b, "Left", b.arma.localToWorld(new V3(0, -0.04, -0.24)), -b.lado);
     } else if (o.vivo && o.pose === "preso") {          // pulsos amarrados (para trás no modelo civil, à frente nos outros)
       b.grupo.updateMatrixWorld(true);
@@ -1816,6 +1822,25 @@
     for (let z = D.zb + 1; z < zs0; z += 2) flange("z", z, xw0, xw1);
     bloco(listra, D.x0 - 0.02, y0 - e, zn0 - e, D.x0 + 0.04, y1 + e + 0.06, zn0 - e + 0.07); bloco(listra, D.x0 - 0.02, y0 - e, zn1 + e - 0.07, D.x0 + 0.04, y1 + e + 0.06, zn1 + e); bloco(listra, D.x0 - 0.02, y1, zn0, D.x0 + 0.04, y1 + e + 0.06, zn1);
     bloco(listra, xw0 - e, y0 - e, D.zb - 0.04, xw0 - e + 0.07, y1 + e + 0.06, D.zb + 0.02); bloco(listra, xw1 + e - 0.07, y0 - e, D.zb - 0.04, xw1 + e, y1 + e + 0.06, D.zb + 0.02); bloco(listra, xw0, y1, D.zb - 0.04, xw1, y1 + e + 0.06, D.zb + 0.02);
+    // telhado do galpão: a colisão dele é em degraus de 62 cm. Dois degrauzinhos invisíveis em cada um (só para quem anda;
+    // tiro passa) deixam atravessar o telhado inteiro andando, de um lado ao outro.
+    for (const [z, baixo, lado] of [[-25.88, 7.71, -1], [-23.75, 8.33, -1], [-21.63, 8.96, -1], [-13.13, 7.71, 1], [-15.25, 8.33, 1], [-17.38, 8.96, 1]])
+      for (const [k, alt] of [[1, 0.21], [0, 0.42]]) {
+        const za = z + lado * k * 0.45, zb = z + lado * (k + 1) * 0.45;
+        fis.addBox([-16.3, baixo - 0.05, Math.min(za, zb)], [12.3, baixo + alt, Math.max(za, zb)], { surface: "metal", playerOnly: true });
+      }
+    // mirante na torre do guindaste: plataforma de grade a 12 m de altura, presa à perna sudoeste, com escada de mão e guarda-corpo
+    const M = { x0: 15.5, x1: 17.9, z0: 3.6, z1: 7.2, y: 12 };
+    bloco(grade, M.x0, M.y - 0.1, M.z0, M.x1, M.y, M.z1, true);
+    for (const z of [M.z0, M.z1 - 0.12]) bloco(escuro, M.x0, M.y - 0.3, z, M.x1 + 0.6, M.y - 0.1, z + 0.12);
+    const corrimao = (xa, za, xb, zb) => {
+      fis.addBox([Math.min(xa, xb) - 0.03, M.y, Math.min(za, zb) - 0.03], [Math.max(xa, xb) + 0.03, M.y + 1.05, Math.max(za, zb) + 0.03], { surface: "metal", playerOnly: true });
+      for (const y of [0.55, 1.02]) bloco(amarelo, Math.min(xa, xb) - 0.02, M.y + y - 0.02, Math.min(za, zb) - 0.02, Math.max(xa, xb) + 0.02, M.y + y + 0.02, Math.max(za, zb) + 0.02);
+      const n = Math.max(1, Math.round(Math.hypot(xb - xa, zb - za) / 1.2));
+      for (let k = 0; k <= n; k++) { const x = xa + (xb - xa) * k / n, z = za + (zb - za) * k / n; bloco(amarelo, x - 0.02, M.y, z - 0.02, x + 0.02, M.y + 1.04, z + 0.02); }
+    };
+    corrimao(M.x0, M.z0, M.x1, M.z0); corrimao(M.x0, M.z1, M.x1, M.z1); corrimao(M.x0, M.z0, M.x0, 4.85); corrimao(M.x0, 5.95, M.x0, M.z1);
+    ESCADAS.push({ x: M.x0 - 0.45, z: 5.4, y0: 0, y1: M.y + 0.12, nx: 1, nz: 0, d: 0.4 });
     for (const s of escadasDosContainers()) ESCADAS.push(s);
     // escadas de mão: dois montantes amarelos e degraus de aço
     for (const s of ESCADAS) {
@@ -1824,7 +1849,7 @@
       for (let y = s.y0 + 0.3; y < s.y1 - 0.05; y += 0.3) bloco(chapa, cx - Math.abs(lx) * 0.24 - 0.015, y - 0.015, cz - Math.abs(lz) * 0.24 - 0.015, cx + Math.abs(lx) * 0.24 + 0.015, y + 0.015, cz + Math.abs(lz) * 0.24 + 0.015);
       if (s.y1 - s.y0 > 6) for (let y = s.y0 + 2.4; y < s.y1 - 0.3; y += 2.4)        // nas escadas de fora, suportes até a parede
         for (const k of [-0.24, 0.24]) bloco(escuro, cx + lx * k - 0.02 + Math.min(0, s.nx) * 0.3, y - 0.02, cz + lz * k - 0.02 + Math.min(0, s.nz) * 0.3, cx + lx * k + 0.02 + Math.max(0, s.nx) * 0.3, y + 0.02, cz + lz * k + 0.02 + Math.max(0, s.nz) * 0.3);
-      if (s.y1 - s.y0 > 6) {                          // no topo das escadas de fora, guarda-corpo atrás de quem desce (para não passar direto)
+      if (s.y0 < 0.1 && !s.curta) {                   // no topo das escadas que saem do chão, guarda-corpo atrás de quem desce (para não passar direto)
         const bx = s.x - s.nx * 0.47, bz = s.z - s.nz * 0.47, ax = Math.abs(lx) * 0.45 + 0.02, az = Math.abs(lz) * 0.45 + 0.02;
         fis.addBox([bx - ax, s.y1 - 1.3, bz - az], [bx + ax, s.y1 + 1.1, bz + az], { surface: "metal", playerOnly: true });
         for (const k of [-0.47, 0.47])                // e dos dois lados, para ninguém sair de lado lá em cima
@@ -1884,6 +1909,8 @@
     const querDescer = sobe * (p.pitch > -0.5 ? 1 : -1) < -0.3;
     if (e && p.onGround && p.pos.y > e.y1 - 0.3 && !querDescer && Math.hypot(p.pos.x - e.x, p.pos.z - e.z) > 0.3) e = null;     // em pé na beira do topo
     mp.naEscada = e;
+    if (!e && p.onGround)                              // parado no alto de uma escada: lembra como descer
+      for (const s of ESCADAS) if (Math.abs(p.pos.y - s.y1) < 0.45 && Math.hypot(p.pos.x - s.x, p.pos.z - s.z) < 1.2) { G.hud.message("Para descer: olhe para baixo e aperte W na escada", 0.3); break; }
     if (e) {
       let v = sobe * (p.pitch > -0.5 ? 1 : -1) * 3.2;    // W sobe; olhando para baixo, W desce (S faz o contrário)
       if ((v > 0 && p.pos.y >= e.y1) || (v < 0 && p.pos.y <= e.y0 + 0.02)) v = 0;
@@ -1937,6 +1964,7 @@
     return true;
   }
   function sortearCarro() {                     // anfitrião: um lugar livre perto do meio do mapa
+    if (!CARRO.ligado) return null;
     for (let t = 0; t < 80; t++) {
       const x = (Math.random() - 0.5) * 30, z = (Math.random() - 0.5) * 20 + 4, yaw = Math.floor(Math.random() * 4) * Math.PI / 2;
       if (carroCabe(x, z, yaw)) return [+x.toFixed(2), +z.toFixed(2), +yaw.toFixed(3)];
