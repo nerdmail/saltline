@@ -541,7 +541,7 @@
         break;
       case "fimPartida": {
         const perdedor = m.vencedor === "p" ? "t" : "p";
-        mp.resultado = (m.vencedor === "e" ? "Partida empatada em " + m.placar.p + " a " + m.placar.t
+        mp.resultado = (m.encerrada ? "Partida encerrada pelo anfitrião · Policiais " + m.placar.p + " a " + m.placar.t + " Terroristas" : m.vencedor === "e" ? "Partida empatada em " + m.placar.p + " a " + m.placar.t
           : "Vencedor: " + TIMES[m.vencedor].nome + " · " + m.placar[m.vencedor] + " a " + m.placar[perdedor])
           + (m.craque ? " · Destaque: " + m.craque[0] + " (" + m.craque[1] + " abates)" : "");
         sairDaPartida(); mp.faseAnfitriao = "lobby"; mp.placar = { p: 0, t: 0 }; mp.rodada = 0;
@@ -676,11 +676,50 @@
     else if (a.startsWith("rod-") && mp.anfitriao) { mp.rodadasTotal = +a.slice(4) || 5; mandarLobby(); }
     else if (a === "comecar") { mp.resultado = null; mp.placar = { p: 0, t: 0 }; mp.rodada = 0; novaRodada(); }
     else if (a === "nome") { await pedirPerfil(true); location.reload(); }
+    else if (a === "voltar") menuDaPartida(false);
+    else if (a === "lobby") {
+      mp.menuAberto = false;
+      if (mp.anfitriao) {                                  // o anfitrião encerra a partida para todos, com o placar como está
+        const pl = mp.placar, v = pl.p > pl.t ? "p" : pl.t > pl.p ? "t" : "e";
+        try { G.enemies.clear(); } catch {}
+        paraTodos({ t: "fimPartida", vencedor: v, placar: pl, encerrada: 1 });
+      } else {                                             // convidado: sai desta rodada e espera a próxima na sala
+        const j = eu(); if (j && j.vivo) { j.vivo = false; enviar({ t: "morri", por: null }); }
+        sairDaPartida(); mp.faseAnfitriao = "valendo"; entrarNoLobby();
+      }
+    }
   });
   // com uma tela do multiplayer aberta, as teclas não chegam ao jogo parado por trás
   // (senão o Enter do apelido começaria uma partida solo)
   for (const tipo of ["keydown", "keyup"])
-    window.addEventListener(tipo, ev => { if (tela && !tela.hidden) ev.stopImmediatePropagation(); }, true);
+    window.addEventListener(tipo, ev => {
+      if (!(tela && !tela.hidden)) return;
+      ev.stopImmediatePropagation();
+      if (tipo === "keydown" && ev.code === "Escape" && mp.menuAberto) { ev.preventDefault(); menuDaPartida(false); }      // Esc de novo fecha o menu
+    }, true);
+  // MENU DA PARTIDA (Esc): voltar ao jogo, voltar à sala de espera ou sair da sala. A partida não para para os outros.
+  function menuDaPartida(abre) {
+    if (!abre) { mp.menuAberto = false; fecharOverlay(); if (emRodada()) try { G.input.requestLock(); } catch {} return; }
+    mp.menuAberto = true; try { G.input.exitLock(); } catch {}
+    overlay(`<div class="mp-k">Partida em andamento</div>
+      <h2 class="mp-h">Menu</h2>
+      <p class="mp-nota">A partida continua rodando para os outros jogadores enquanto este menu está aberto.</p>
+      <div class="mp-acoes">
+        <button class="btn primary" data-mp="voltar">Voltar ao jogo</button>
+        <button class="btn" data-mp="lobby">${mp.anfitriao ? "Encerrar a partida" : "Ir para a sala de espera"}</button>
+        <button class="btn" data-mp="sair">Sair da sala</button>
+      </div>
+      <p class="mp-nota">${mp.anfitriao ? "Encerrar a partida leva todos de volta à sala de espera." : "Na sala de espera você fica fora desta rodada e volta a jogar na próxima."}</p>`);
+  }
+  window.addEventListener("keydown", ev => {
+    if (ev.code !== "Escape" || ev.repeat || !emRodada() || (tela && !tela.hidden) || (pichoEl && !pichoEl.hidden) || (dicasEl && dicasEl.classList.contains("aberta"))) return;
+    ev.preventDefault(); menuDaPartida(true);
+  }, true);
+  // sem o Esc preso (Safari, Firefox, ou fora da tela cheia) o navegador engole a tecla e só solta o mouse: abre o menu do mesmo jeito
+  document.addEventListener("pointerlockchange", () => {
+    if (document.pointerLockElement || !emRodada() || mp.menuAberto || (tela && !tela.hidden) || (pichoEl && !pichoEl.hidden)) return;
+    setTimeout(() => { if (!document.pointerLockElement && emRodada() && !mp.menuAberto && !(tela && !tela.hidden) && !(pichoEl && !pichoEl.hidden)) menuDaPartida(true); }, 150);
+  });
 
   /* ------------------------------------------------------------------ rodadas */
   function novoJogador(id, nome) {
@@ -780,7 +819,7 @@
     mp.fase = "preparo"; mp.preparoT = CFG.tempoPreparo; mp.rodada = m.n; mp.placar = m.placar; mp.dificuldade = m.dificuldade; mp.tempo = dif().tempo;
     mp.pegando = -1; mp.pegarT = 0; mp.passagemT = 0; mp.ultimoDano = null; mp.resultado = null; mp.assinatura = "";
     mp.resgateVisto = null; discoResgate.visible = false; painel.visible = false;
-    fecharOverlay(); esconderMenuSolo(); if (dicasEl) abrirDicas(false);
+    mp.menuAberto = false; fecharOverlay(); esconderMenuSolo(); if (dicasEl) abrirDicas(false);
     if (!mp.anfitriao) { try { G.enemies.clear(); } catch {} mp.marionetes.clear(); }
     prepararSala(); aplicarPorta(false);
     zerarRefens(); limparExplosivos(); limparArmas(); porCarro(m.carro);
