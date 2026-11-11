@@ -76,7 +76,7 @@
     { x: 3,      z: -19.2,  y0: 0.03, y1: 5.16, nx: 1,  nz: 0, d: 0.42, curta: true },  // do duto para o chão do galpão (leste)
     { x: -13,    z: -16.5,  y0: 0.03, y1: 5.16, nx: -1, nz: 0, d: 0.42, curta: true },  // do duto para o chão do galpão (oeste)
     { x: -16.75, z: -19.5,  y0: 0,    y1: 9.7,  nx: 1,  nz: 0, d: 0.4 },                // do telhado para o chão, por fora (oeste)
-    { x: 12.75,  z: -19.5,  y0: 0,    y1: 9.7,  nx: -1, nz: 0, d: 0.4 },                // do telhado para o chão, por fora (leste)
+    { x: 2,      z: -28.8,  y0: 0,    y1: 7.83, nx: 0,  nz: 1, d: 0.4 },                // do telhado para o chão, por fora (lado norte, junto ao alambrado; o leste tem um portão)
   ];
   // onde se anda deitado: [x de, z de, x até, z até, y de, y até] (as bocas e os buracos das escadas entram com folga)
   const DEITAR = [
@@ -419,6 +419,8 @@
       case "baixa": {
         const v = mp.jogadores.get(m.quem), k = m.por && mp.jogadores.get(m.por);
         if (v && v.id !== mp.meuId) v.vivo = false;
+        if (v) v.mortes = (v.mortes | 0) + 1;
+        if (k && k !== v) { k.abates = (k.abates | 0) + 1; k.abatesRodada = (k.abatesRodada | 0) + 1; }
         if (v) G.hud.feed(k ? `<b>${esc(k.nome)}</b> eliminou <b>${esc(v.nome)}</b>` : m.por === "refem" ? `<b>${esc(v.nome)}</b> foi abatido por um refém` : m.por === "queda" ? `<b>${esc(v.nome)}</b> caiu de muito alto` : `<b>${esc(v.nome)}</b> caiu para as máquinas`);
         break;
       }
@@ -456,7 +458,7 @@
         explosivos.remove(it.malha); explosivos.remove(it.anel); mp.itens.delete(m.id);
         if (m.por === mp.meuId) {
           if (it.tipo === "colete" || it.tipo === "capacete") mp[it.tipo] = true; else mp.bolsa[it.tipo]++;
-          tocar("reload_magin"); G.hud.message("Pegou: " + NOMES_ITEM[it.tipo], 2);
+          tocar("reload_magin"); G.hud.message("Pegou: " + NOMES_ITEM[it.tipo] + ({ granada: " · aperte Q para jogar", bomba: " · aperte B para armar no chão", relogio: " · aperte V para armar (T muda o tempo)" }[it.tipo] || ""), 4.5);
         }
         break;
       }
@@ -512,6 +514,7 @@
         const perdedor = m.vencedor === "p" ? "t" : "p";
         mp.resultado = TIMES[m.vencedor].nome + " venceram a partida por " + m.placar[m.vencedor] + " a " + m.placar[perdedor];
         sairDaPartida(); mp.faseAnfitriao = "lobby"; mp.placar = { p: 0, t: 0 }; mp.rodada = 0;
+        for (const j of mp.jogadores.values()) { j.abates = 0; j.abatesRodada = 0; j.mortes = 0; }
         entrarNoLobby();
         break;
       }
@@ -577,19 +580,22 @@
         ? `<div class="seg">${Object.entries(DIFICULDADES).map(([k, v]) => `<button data-mp="dif-${k}" aria-pressed="${k === mp.dificuldade}">${v.nome}</button>`).join("")}</div>`
         : `<b>${d.nome}</b>`}</div>
       <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times. Vence quem fizer ${CFG.rodadasParaVencer} rodadas.</p>
+      <details class="mp-dicas" ${mp.dicasAbertas ? "open" : ""}><summary class="btn small">Ver dicas</summary>
       <ul class="mp-regras">
         <li><b>Objetivo</b> Policiais soltam os reféns (segure E) e levam ao ponto de resgate mostrado no painel da sala. Terroristas impedem até o tempo acabar.</li>
         <li><b>Fim da rodada</b> Todos os reféns salvos, um refém morto, um time inteiro caído ou o tempo esgotado.</li>
         <li><b>Sniper</b> Um tiro por vez, zoom de 5x no botão direito. Mata jogador com um tiro, com ou sem colete; refém precisa de dois.</li>
         <li><b>Lugares altos</b> Vários containers, o telhado do galpão e um mirante na torre do guindaste têm escada de mão. Para descer: olhe para baixo e aperte W.</li>
         <li><b>Armas</b> Todos nascem com a faca. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
+        <li><b>Explosivos</b> Pegue passando por cima. Q joga a granada; B arma a bomba no chão onde você está; V arma a bomba-relógio (T muda o tempo). Qualquer um desarma segurando E perto dela.</li>
+        <li><b>Placar</b> Segure Tab para ver quem está vivo, os abates e as vitórias de cada time.</li>
         <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
         <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura metade de um tiro no corpo; o capacete salva de um tiro na cabeça. Cada um aguenta um tiro só.</li>
         <li><b>Sala dos reféns</b> Tem 4 portas secretas numeradas (cada uma leva sempre ao mesmo lugar) e uma escada de mão até o duto de ar.</li>
         <li><b>Duto e telhado</b> No duto só se rasteja; ele leva a escadas para o chão e para o telhado. Na escada: W sobe; olhando para baixo, W desce.</li>
         <li><b>Queda</b> Cair de muito alto tira metade da vida.</li>
         <li><b>Reféns</b> Só morrem com tiro na cabeça. Soltos, andam armados e atiram nos Terroristas.</li>
-      </ul>
+      </ul></details>
       <div class="mp-acoes">
         ${mp.anfitriao ? `<button class="btn primary" data-mp="comecar">Começar partida</button>`
           : `<span class="mp-espera">${emAndamento ? "Partida em andamento — você entra na próxima rodada" : "Aguardando o anfitrião começar"}</span>`}
@@ -706,7 +712,7 @@
     if (!mp.anfitriao) { try { G.enemies.clear(); } catch {} mp.marionetes.clear(); }
     prepararSala(); aplicarPorta(false);
     zerarRefens(); limparExplosivos(); limparArmas(); porCarro(m.carro);
-    for (const j of mp.jogadores.values()) { j.arma = j.time ? j.time + "_faca" : null; j.armadura = 0; }      // todo mundo nasce com a faca
+    for (const j of mp.jogadores.values()) { j.arma = j.time ? j.time + "_faca" : null; j.armadura = 0; j.abatesRodada = 0; }      // todo mundo nasce com a faca
     mp.arma = eu() && eu().time && m.nasc[mp.meuId] ? eu().time + "_faca" : null;
     for (const d of m.armas || []) porArmaNoChao(d);
     for (const d of m.itens || []) {
@@ -735,7 +741,7 @@
     gradesVazadas(true); G.player.tuning.sprint = G.player.tuning.walk * 2;      // correr = o dobro de andar
     mp.quedaTopo = meu ? meu[1] : 0; mp.naEscada = null; mp.deitarManual = false;
     if (!meu) p.alive = false;
-    placarEl.hidden = false;
+    placarEl.hidden = false; vidaEl.hidden = false;
   }
   function sairDaPartida() {
     if (G.game === partida) { G.game = solo; solo.state = "title"; }
@@ -755,7 +761,7 @@
     try { G.weapon.name = nomeArmaOriginal; aplicarModelo(null); animarFaca(0, false); } catch {}
     for (const j of mp.jogadores.values()) if (j.boneco) j.boneco.grupo.visible = false;
     for (const r of mp.refens) r.boneco.grupo.visible = false;
-    placarEl.hidden = true;
+    placarEl.hidden = true; vidaEl.hidden = true; tabEl.hidden = true;
   }
   // objetivo, contador e marcadores do HUD; refaz só quando a situação dos reféns muda
   function atualizarObjetivo() {
@@ -1292,7 +1298,7 @@
   function instalarMaquinas() {
     const dbg = G.enemies.debug;
     for (const e of [...dbg.gulls, ...dbg.hounds]) {
-      const atualizar = e._update, dano = e.damage;
+      const atualizar = e._update, dano = e.damage, ehDrone = dbg.gulls.includes(e);
       let alvoT = 0, alvo = null;
       // anfitrião: cada máquina persegue o jogador vivo mais próximo, seja ele local ou remoto
       e._update = dt => {
@@ -1308,6 +1314,13 @@
         const real = G.player;
         if (alvo) G.player = alvo;
         try { atualizar(dt); } finally { G.player = real; }
+        if (ehDrone) {                         // drone dentro de um container ou parede: sobe até passar por cima
+          const q = e.pos;
+          for (const b of G.physics.boxes) if (!b.playerOnly && q.x > b.min.x - 0.7 && q.x < b.max.x + 0.7 && q.z > b.min.z - 0.7 && q.z < b.max.z + 0.7 && q.y > b.min.y - 0.4 && q.y < b.max.y + 0.8 && b.max.y - b.min.y > 1.2) {
+            q.y = Math.min(q.y + 6 * dt, b.max.y + 0.8); if (typeof e.alt === "number") e.alt = Math.max(e.alt, q.y);
+            break;
+          }
+        }
       };
       // convidado: a máquina é uma marionete; quem decide o dano é o anfitrião
       e.damage = (q, ponto, dir, parte) => {
@@ -1833,14 +1846,21 @@
     const M = { x0: 15.5, x1: 17.9, z0: 3.6, z1: 7.2, y: 12 };
     bloco(grade, M.x0, M.y - 0.1, M.z0, M.x1, M.y, M.z1, true);
     for (const z of [M.z0, M.z1 - 0.12]) bloco(escuro, M.x0, M.y - 0.3, z, M.x1 + 0.6, M.y - 0.1, z + 0.12);
-    const corrimao = (xa, za, xb, zb) => {
-      fis.addBox([Math.min(xa, xb) - 0.03, M.y, Math.min(za, zb) - 0.03], [Math.max(xa, xb) + 0.03, M.y + 1.05, Math.max(za, zb) + 0.03], { surface: "metal", playerOnly: true });
-      for (const y of [0.55, 1.02]) bloco(amarelo, Math.min(xa, xb) - 0.02, M.y + y - 0.02, Math.min(za, zb) - 0.02, Math.max(xa, xb) + 0.02, M.y + y + 0.02, Math.max(za, zb) + 0.02);
+    const corrimao = (xa, za, xb, zb, base = M.y) => {
+      fis.addBox([Math.min(xa, xb) - 0.03, base, Math.min(za, zb) - 0.03], [Math.max(xa, xb) + 0.03, base + 1.05, Math.max(za, zb) + 0.03], { surface: "metal", playerOnly: true });
+      for (const y of [0.55, 1.02]) bloco(amarelo, Math.min(xa, xb) - 0.02, base + y - 0.02, Math.min(za, zb) - 0.02, Math.max(xa, xb) + 0.02, base + y + 0.02, Math.max(za, zb) + 0.02);
       const n = Math.max(1, Math.round(Math.hypot(xb - xa, zb - za) / 1.2));
-      for (let k = 0; k <= n; k++) { const x = xa + (xb - xa) * k / n, z = za + (zb - za) * k / n; bloco(amarelo, x - 0.02, M.y, z - 0.02, x + 0.02, M.y + 1.04, z + 0.02); }
+      for (let k = 0; k <= n; k++) { const x = xa + (xb - xa) * k / n, z = za + (zb - za) * k / n; bloco(amarelo, x - 0.02, base, z - 0.02, x + 0.02, base + 1.04, z + 0.02); }
     };
     corrimao(M.x0, M.z0, M.x1, M.z0); corrimao(M.x0, M.z1, M.x1, M.z1); corrimao(M.x0, M.z0, M.x0, 4.85); corrimao(M.x0, 5.95, M.x0, M.z1);
     ESCADAS.push({ x: M.x0 - 0.45, z: 5.4, y0: 0, y1: M.y + 0.12, nx: 1, nz: 0, d: 0.4 });
+    // segundo lance: do mirante até o alto da torre, 22 m, o ponto mais alto do mapa. A escada sai por um alçapão no piso de cima.
+    const A2 = { x0: 15.65, x1: 16.55, z0: 3.62, z1: 4.6, y: 22 };
+    bloco(grade, A2.x1, A2.y - 0.1, M.z0, M.x1, A2.y, A2.z1, true); bloco(grade, M.x0, A2.y - 0.1, A2.z1, M.x1, A2.y, M.z1, true); bloco(grade, M.x0, A2.y - 0.1, M.z0, A2.x0, A2.y, A2.z1, true);
+    for (const z of [M.z0, M.z1 - 0.12]) bloco(escuro, M.x0, A2.y - 0.3, z, M.x1 + 0.6, A2.y - 0.1, z + 0.12);
+    for (const [x, z] of [[M.x0, M.z0], [M.x0, M.z1], [M.x1, M.z1]]) bloco(escuro, x - 0.04, M.y, z - 0.04, x + 0.04, A2.y, z + 0.04);      // montantes entre os dois pisos
+    corrimao(M.x0, M.z0, M.x1, M.z0, A2.y); corrimao(M.x0, M.z1, M.x1, M.z1, A2.y); corrimao(M.x0, M.z0, M.x0, M.z1, A2.y); corrimao(M.x1, M.z0, M.x1, M.z1, A2.y);
+    ESCADAS.push({ x: 16.1, z: 4.1, y0: M.y, y1: A2.y + 0.12, nx: 0, nz: 1, d: 0.42 });
     for (const s of escadasDosContainers()) ESCADAS.push(s);
     // escadas de mão: dois montantes amarelos e degraus de aço
     for (const s of ESCADAS) {
@@ -2267,8 +2287,9 @@
     const b = mp.bolsa, mostra = !!(j && p.alive);
     bolsaEl.hidden = !mostra;
     if (mostra) {
-      const txt = `<span><kbd>Q</kbd> Granada <b>${b.granada}</b></span><span><kbd>B</kbd> Bomba <b>${b.bomba}</b></span>` +
-        `<span><kbd>V</kbd> Relógio <b>${b.relogio}</b> · <kbd>T</kbd> ${CFG.relogio.tempos[mp.tempoIdx]}s</span>` +
+      const txt = (b.granada ? `<span><kbd>Q</kbd> Jogar granada <b>${b.granada}</b></span>` : "") +
+        (b.bomba ? `<span><kbd>B</kbd> Armar bomba aqui · explode em ${CFG.bomba.pavio}s <b>${b.bomba}</b></span>` : "") +
+        (b.relogio ? `<span><kbd>V</kbd> Armar bomba-relógio de ${CFG.relogio.tempos[mp.tempoIdx]}s <b>${b.relogio}</b> · <kbd>T</kbd> muda o tempo</span>` : "") +
         `<span>Colete <b>${mp.colete ? "sim" : "não"}</b> · Capacete <b>${mp.capacete ? "sim" : "não"}</b></span>`;
       if (txt !== bolsaEl._txt) { bolsaEl._txt = txt; bolsaEl.innerHTML = txt; }
     }
@@ -2310,10 +2331,14 @@
     giro.add(copia); g.add(giro);
     if (d[5]) {
       copia.rotation.set(Math.PI / 2, 0, Math.PI / 2); if (a.faca) copia.scale.setScalar(1.8);
-      giro.rotation.z = curta ? 0 : 0.3;                  // as longas ficam inclinadas, para caber sob a janela
+      if (!curta) {                                       // as longas ficam inclinadas o quanto for preciso para caber sob a janela
+        giro.updateMatrixWorld(true);
+        const em_pe = new T.Box3().setFromObject(giro), comp = em_pe.max.y - em_pe.min.y;
+        giro.rotation.z = Math.max(0.3, comp > 0.78 ? Math.acos(0.78 / comp) : 0);
+      }
       giro.updateMatrixWorld(true);
       const cx = new T.Box3().setFromObject(giro), alt = cx.max.y - cx.min.y;
-      giro.position.set(-(cx.min.x + cx.max.x) / 2, (curta ? 0.5 - alt / 2 : 0.07) - cx.min.y, 0.2 - (cx.min.z + cx.max.z) / 2);
+      giro.position.set(-(cx.min.x + cx.max.x) / 2, (curta ? 0.5 - alt / 2 : 0.07) - cx.min.y, 0.15 - (cx.min.z + cx.max.z) / 2);
     } else {
       if (a.faca) copia.scale.setScalar(2.2); else { copia.position.z = 0.08 * VARIANTES[d[1]].z; copia.scale.setScalar(1.2); giro.rotation.z = 0.25; }
       giro.position.y = 0.5;
@@ -2533,6 +2558,28 @@
 
   /* --------------------------------------------------------- laço da partida */
   let placarEl = null;
+  // vida bem visível embaixo, no meio: número grande e barra que muda de cor
+  let vidaEl = null, tabEl = null;
+  function desenharVida() {
+    const p = G.player, v = p.alive ? Math.max(0, Math.round(p.health)) : 0, max = p.maxHealth || 100;
+    if (v === vidaEl._v && max === vidaEl._m) return;
+    vidaEl._v = v; vidaEl._m = max;
+    const f = Math.min(1, v / max), cor = v <= 0 ? "#8a8f94" : f > 0.6 ? "#7bd88f" : f > 0.3 ? "#ffb347" : "#ff5a40";
+    vidaEl.innerHTML = `<span>Vida</span><b style="color:${cor}">${v}</b><i><u style="width:${(f * 100).toFixed(0)}%;background:${cor}"></u></i>`;
+  }
+  // placar completo enquanto se segura Tab: os dois times, quem está vivo, abates na rodada e na partida, mortes e vitórias
+  function desenharTab() {
+    const linha = j => `<tr class="${j.vivo ? "" : "mp-morto"}${j.id === mp.meuId ? " mp-eu" : ""}"><td>${esc(j.nome)}</td><td>${j.vivo ? "vivo" : "morto"}</td><td>${j.abatesRodada | 0}</td><td>${j.abates | 0}</td><td>${j.mortes | 0}</td></tr>`;
+    const time = t => {
+      const gente = [...mp.jogadores.values()].filter(j => j.time === t).sort((a, b) => (b.abates | 0) - (a.abates | 0));
+      return `<section style="--cor:${TIMES[t].css}"><h3>${TIMES[t].nome} <b>${mp.placar[t]}</b> <em>${mp.placar[t] === 1 ? "vitória" : "vitórias"} · ${gente.filter(j => j.vivo).length} de ${gente.length} vivos</em></h3>
+        <table><tr><th>Jogador</th><th>Situação</th><th>Abates na rodada</th><th>Abates na partida</th><th>Mortes</th></tr>${gente.map(linha).join("") || `<tr><td colspan="5">ninguém</td></tr>`}</table></section>`;
+    };
+    tabEl.innerHTML = `<h2>Placar · rodada ${mp.rodada} · vence quem fizer ${CFG.rodadasParaVencer}</h2>${time("p")}${time("t")}`;
+  }
+  window.addEventListener("keydown", ev => { if (ev.code === "Tab" && emRodada()) { ev.preventDefault(); if (tabEl.hidden) { tabEl.hidden = false; desenharTab(); } } });
+  window.addEventListener("keyup", ev => { if (ev.code === "Tab" && tabEl) { ev.preventDefault(); tabEl.hidden = true; } });
+  window.addEventListener("blur", () => { if (tabEl) tabEl.hidden = true; });
   function desenharPlacar() {
     const vivos = t => { let n = 0; for (const j of mp.jogadores.values()) if (j.time === t && j.vivo) n++; return n; };
     const s = Math.max(0, Math.ceil(mp.tempo)), relogio = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
@@ -2576,7 +2623,8 @@
           m: G.enemies.list.filter(e => e.alive).map(e => [e.id, e.type === "hound" ? 1 : 0, ...arr(e.pos), +(e.yaw || 0).toFixed(2)]) }, mp.meuId);
       }
       mp.placarT -= dt;
-      if (mp.placarT <= 0) { mp.placarT = 0.25; desenharPlacar(); }
+      if (mp.placarT <= 0) { mp.placarT = 0.25; desenharPlacar(); if (!tabEl.hidden) desenharTab(); }
+      desenharVida();
       return true;
     },
   };
@@ -2601,6 +2649,9 @@
       if (emRodada() && mp.deitado && G.player.alive) { G.camera.position.y -= 0.55; G.player.eye.y -= 0.55; }
       return armaAtualiza.apply(this, a);
     };
+    vidaEl = document.createElement("div"); vidaEl.className = "mp-vida"; vidaEl.hidden = true; document.getElementById("app").appendChild(vidaEl);
+    tabEl = document.createElement("div"); tabEl.className = "mp-tab"; tabEl.hidden = true; document.getElementById("app").appendChild(tabEl);
+    document.addEventListener("toggle", ev => { if (ev.target.classList && ev.target.classList.contains("mp-dicas")) mp.dicasAbertas = ev.target.open; }, true);
     placarEl = document.createElement("div"); placarEl.className = "mp-placar"; placarEl.hidden = true;
     document.getElementById("app").appendChild(placarEl);
     bolsaEl = document.createElement("div"); bolsaEl.className = "mp-bolsa"; bolsaEl.hidden = true;

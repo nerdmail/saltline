@@ -47,3 +47,33 @@
   display: flex; flex-direction: column; gap: 6px; font: 500 12px/1 var(--f-label); letter-spacing: .16em; text-transform: uppercase;
   color: var(--bone-dim); text-shadow: var(--shadow); pointer-events: none; }
 .mp-bolsa b { color: var(--signal); font-size: 15px; margin-left: 4px; }
+
+/* dicas em sanfona na sala de espera */
+.mp-dicas { margin-top: 14px; }
+.mp-dicas > summary { display: inline-block; cursor: pointer; list-style: none; }
+.mp-dicas > summary::-webkit-details-marker { display: none; }
+.mp-dicas[open] > summary { color: var(--signal); border-color: var(--signal); }
+
+/* vida, embaixo no meio */
+.mp-vida { position: absolute; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: var(--plate); border-bottom: 2px solid var(--line); text-shadow: var(--shadow); pointer-events: none; }
+.mp-vida[hidden], .mp-tab[hidden] { display: none; }
+.mp-vida span { font: 600 12px/1 var(--f-label); letter-spacing: .2em; text-transform: uppercase; color: var(--bone-dim); }
+.mp-vida b { font: 900 34px/1 var(--f-display); letter-spacing: .04em; min-width: 62px; text-align: right; }
+.mp-vida i { display: block; width: 180px; height: 10px; background: rgba(232, 228, 218, .14); }
+.mp-vida u { display: block; height: 100%; text-decoration: none; transition: width .15s; }
+
+/* placar completo (Tab) */
+.mp-tab { position: absolute; z-index: 55; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(880px, calc(100% - 32px)); max-height: calc(100% - 48px); overflow: auto;
+  padding: 20px 22px; background: rgba(11, 13, 15, .9); border: 1px solid var(--line); border-top: 3px solid var(--signal); color: var(--bone); pointer-events: none; }
+.mp-tab h2 { font: 600 13px/1 var(--f-label); letter-spacing: .24em; text-transform: uppercase; color: var(--steel); margin: 0 0 14px; }
+.mp-tab section { border-top: 3px solid var(--cor); padding: 10px 0 14px; }
+.mp-tab h3 { font: 700 22px/1 var(--f-display); letter-spacing: .1em; text-transform: uppercase; color: var(--cor); margin: 0 0 8px; }
+.mp-tab h3 b { font-size: 30px; margin: 0 6px 0 10px; color: var(--bone); }
+.mp-tab h3 em { font: 400 11px/1 var(--f-mono); font-style: normal; letter-spacing: .04em; text-transform: none; color: var(--bone-dim); }
+.mp-tab table { width: 100%; border-collapse: collapse; font: 500 14px/1.2 var(--f-label); letter-spacing: .06em; }
+.mp-tab th { font: 400 10px/1 var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--steel); text-align: left; padding: 4px 8px; }
+.mp-tab td { padding: 6px 8px; border-top: 1px solid var(--line); }
+.mp-tab td:nth-child(n+3), .mp-tab th:nth-child(n+3) { text-align: right; font-family: var(--f-mono); }
+.mp-tab tr.mp-morto td { color: var(--bone-faint); }
+.mp-tab tr.mp-eu td:first-child { color: var(--signal); }
