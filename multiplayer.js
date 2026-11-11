@@ -386,9 +386,9 @@
           mp.ultimoDano = { por: m.por, t: performance.now() };
           let q = m.q;
           if (m.c === 1) {                       // tiro na cabeça: mata, a não ser que o capacete segure (aí tira metade da vida)
-            if (mp.capacete) { mp.capacete = false; q = (G.player.maxHealth || 100) * 0.5; G.hud.message("O capacete segurou o tiro · você perdeu o capacete", 3); }
+            if (mp.capacete) { mp.capacete = false; q = 50; G.hud.message("O capacete segurou o tiro · você perdeu o capacete", 3); if (mp.reservaCapacete > 0) { mp.reservaCapacete--; mp.capacete = true; } }
             else q = 999;
-          } else if (m.c === 0 && mp.colete) { mp.colete = false; q *= 0.5; G.hud.message("O colete segurou metade do tiro · você perdeu o colete", 3); }
+          } else if (m.c === 0 && mp.colete) { mp.colete = false; q *= 0.5; G.hud.message("O colete segurou metade do tiro · você perdeu o colete", 3); if (mp.reservaColete > 0) { mp.reservaColete--; mp.colete = true; } }
           G.player.damage(q, m.de ? new V3().fromArray(m.de) : null);
         }
         break;
@@ -1831,6 +1831,16 @@
   window.addEventListener("keyup", ev => { if (ev.code === "KeyC") mp.correr = false; else if (ev.code === "ControlLeft" || ev.code === "ControlRight") mp.ctrl = false; });
   window.addEventListener("blur", () => { mp.correr = false; mp.ctrl = false; });
 
+  // tecla 0, com uma arma na mão, uma vez por rodada: vida em dobro e cinco coletes e cinco capacetes (um em uso, quatro de
+  // reserva). Só quem apertou vê o aviso; não aparece nas regras da sala de espera.
+  window.addEventListener("keydown", ev => {
+    if ((ev.code !== "Digit0" && ev.code !== "Numpad0") || ev.repeat || !emRodada() || mp.fase !== "valendo" || !G.player.alive || !mp.arma || mp.superUsado || (tela && !tela.hidden)) return;
+    const p = G.player;
+    mp.superUsado = true; p.maxHealth = 200; p.health = 200;
+    mp.colete = true; mp.capacete = true; mp.reservaColete = 4; mp.reservaCapacete = 4;
+    G.hud.message("Super poder ativado", 3);
+  });
+
   /* ---------------------------------------------------------------- pichação */
   // tecla P: marca a parede (ou o chão) para onde se está olhando com o desenho do time
   let pichacoes = null; const artes = {};
@@ -1947,7 +1957,8 @@
       m.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
     }
     mp.itens.clear(); mp.bombas.clear(); mp.granadas.length = 0;
-    mp.bolsa = { granada: 0, bomba: 0, relogio: 0 }; mp.desarmarT = 0; mp.colete = false; mp.capacete = false;
+    mp.bolsa = { granada: 0, bomba: 0, relogio: 0 }; mp.desarmarT = 0; mp.colete = false; mp.capacete = false; mp.reservaColete = 0; mp.reservaCapacete = 0; mp.superUsado = false;
+    try { G.player.maxHealth = 100; } catch {}
   }
   function ferirRefem(r, golpes, porId) {       // anfitrião; cada golpe vale um tiro na cabeça
     if (mp.fase !== "valendo" || r.estado > 1 || golpes <= 0) return;
