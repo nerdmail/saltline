@@ -94,10 +94,11 @@
   // (não soltam nem levam refém) e ficam mais duros e mais certeiros conforme a dificuldade da sala.
   const BOTS = { porTime: 5, visao: 45, vel: 3.6, nomes: ["Brasa", "Tigre", "Zulu", "Corvo", "Farol", "Lince", "Rato", "Vespa", "Trovão", "Jacaré", "Onça", "Cobra"],
     niveis: {
-      facil:   { vida: 55,  precisao: 0.16, cadencia: 1.2,  dano: 9,  vel: 3.2, reflexo: 0.6 },
-      medio:   { vida: 100, precisao: 0.28, cadencia: 0.85, dano: 13, vel: 3.8, reflexo: 0.4 },
-      dificil: { vida: 150, precisao: 0.42, cadencia: 0.6,  dano: 17, vel: 4.5, reflexo: 0.25 },
-      treta:   { vida: 200, precisao: 0.58, cadencia: 0.42, dano: 21, vel: 5.2, reflexo: 0.15 },
+      // movel = quanto da mira sobra quando o alvo está correndo (nos níveis baixos o bot erra mais alvo em movimento)
+      facil:   { vida: 66,  precisao: 0.19, cadencia: 1.0,  dano: 11, vel: 3.4, reflexo: 0.5,  movel: 0.55 },
+      medio:   { vida: 120, precisao: 0.34, cadencia: 0.7,  dano: 16, vel: 4.0, reflexo: 0.33, movel: 0.65 },
+      dificil: { vida: 150, precisao: 0.42, cadencia: 0.6,  dano: 17, vel: 4.5, reflexo: 0.25, movel: 0.8 },
+      treta:   { vida: 200, precisao: 0.58, cadencia: 0.42, dano: 21, vel: 5.2, reflexo: 0.15, movel: 0.9 },
     } };
   const QUEDA = { altura: 3.2, dano: 0.5 };     // cair de mais que isso tira metade da vida (só de jogador; refém não se machuca)
   const MESA = [-13.9, -12.1, -26.68];                                  // mesa encostada na parede norte: x de, x até, z da frente
@@ -2018,6 +2019,11 @@
   }
   // anfitrião, todo quadro: cada bot procura o inimigo vivo mais perto, vai até ele pelo caminho do mapa,
   // e quando o vê para, anda de lado e atira
+  // a que altura fica o meio do corpo de um jogador, conforme ele esteja em pé, agachado ou deitado
+  function meioDoCorpo(j) {
+    const eu_ = j.id === mp.meuId, deitado = eu_ ? mp.deitado : j.noChao || noDuto(j.pos), agachado = eu_ ? G.player.crouching : j.agachado;
+    return deitado ? 0.3 : agachado ? 0.75 : 1.2;
+  }
   function moverBots(dt) {
     const cfg = BOTS.niveis[mp.dificuldade] || BOTS.niveis.medio;
     for (const b of mp.jogadores.values()) {
@@ -2026,9 +2032,10 @@
       ia.pensarT -= dt;
       if (ia.pensarT <= 0) {
         ia.pensarT = cfg.reflexo * (0.8 + Math.random() * 0.4);
-        const olho = new V3(b.pos.x, b.pos.y + 1.55, b.pos.z), ve = j => { const p = posDe(j); try { return p.distanceTo(b.pos) < BOTS.visao && G.physics.lineOfSight(olho, new V3(p.x, p.y + 1.2, p.z)); } catch { return false; } };
+        const olho = new V3(b.pos.x, b.pos.y + 1.55, b.pos.z), ve = j => { const p = posDe(j); try { return p.distanceTo(b.pos) < BOTS.visao && G.physics.lineOfSight(olho, new V3(p.x, p.y + meioDoCorpo(j), p.z)); } catch { return false; } };
         // fica no mesmo alvo até ele cair; só troca se o perdeu de vista há um tempo e há outro inimigo à vista, ou outro bem mais perto
         if (ia.alvo && (!ia.alvo.vivo || !mp.jogadores.has(ia.alvo.id))) ia.alvo = null;
+        const viaAntes = ia.visto;
         ia.visto = !!ia.alvo && ve(ia.alvo);
         ia.semVerT = ia.visto ? 0 : (ia.semVerT || 0) + ia.pensarT;
         let perto = null, dPerto = 1e9, aVista = null, dVista = 1e9;
@@ -2041,8 +2048,11 @@
         const dAlvo = ia.alvo ? posDe(ia.alvo).distanceTo(b.pos) : 1e9;
         if (!ia.alvo) { ia.alvo = aVista || perto; ia.caminho = null; ia.semVerT = 0; ia.visto = !!ia.alvo && ia.alvo === aVista; }
         else if (aVista && ((!ia.visto && ia.semVerT > 3) || dVista < dAlvo * 0.5)) { ia.alvo = aVista; ia.caminho = null; ia.semVerT = 0; ia.visto = true; }
+        if (ia.visto && !viaAntes) ia.tiroT = Math.min(ia.tiroT, cfg.reflexo * 0.6);      // entrou na linha de visão: atira logo
         if (ia.alvo) {
           const p = posDe(ia.alvo); ia.dist = p.distanceTo(b.pos);
+          ia.velAlvo = ia.ultAlvo === ia.alvo.id && ia.ultPos ? Math.hypot(p.x - ia.ultPos.x, p.z - ia.ultPos.z) / Math.max(0.05, ia.pensarT) : 0;      // o alvo está parado, andando ou correndo?
+          ia.ultAlvo = ia.alvo.id; ia.ultPos = p.clone(); ia.ar = Math.abs(p.y - (ia.ultY ?? p.y)) > 0.25; ia.ultY = p.y;
           if (ia.visto && ia.dist < 9) ia.caminho = null;                    // perto e à vista: para de avançar e luta
           else if ((ia.caminhoT -= ia.pensarT) <= 0 || !ia.caminho || !ia.caminho.length) { ia.caminhoT = 1.2; try { ia.caminho = G.physics.nav.findPath(b.pos, new V3(p.x, 0, p.z)); } catch { ia.caminho = null; } }
         }
@@ -2062,13 +2072,15 @@
       b.pisando = !res || !!res.onGround;
       if (b.pisando && b.vel.y < 0) b.vel.y = 0;
       if (b.pos.y < -1) { b.pos.y = 0; b.vel.y = 0; }
-      if (ia.visto && ia.alvo) { const p = posDe(ia.alvo); b.yaw = Math.atan2(-(p.x - b.pos.x), -(p.z - b.pos.z)); b.pitch = Math.atan2(p.y - b.pos.y, ia.dist || 1) * 0.8; }
+      if (ia.visto && ia.alvo) { const p = posDe(ia.alvo); b.yaw = Math.atan2(-(p.x - b.pos.x), -(p.z - b.pos.z)); b.pitch = Math.atan2(p.y + meioDoCorpo(ia.alvo) - (b.pos.y + 1.4), ia.dist || 1); }
       else if (wx || wz) { b.yaw = Math.atan2(-wx, -wz); b.pitch = 0; }
       ia.tiroT -= dt;
       if (ia.visto && ia.alvo && ia.alvo.vivo && ia.tiroT <= 0) {
         ia.tiroT = cfg.cadencia * (0.7 + Math.random() * 0.6);
-        const p = posDe(ia.alvo), olho = new V3(b.pos.x, b.pos.y + 1.5, b.pos.z), fim = new V3(p.x, p.y + 1.2, p.z);
-        const acertou = Math.random() < cfg.precisao * (ia.dist < 12 ? 1.3 : ia.dist > 28 ? 0.6 : 1);
+        const alt = meioDoCorpo(ia.alvo), p = posDe(ia.alvo), olho = new V3(b.pos.x, b.pos.y + 1.5, b.pos.z), fim = new V3(p.x, p.y + alt, p.z);      // mira na altura em que o alvo está
+        const v = ia.velAlvo || 0, mov = v > 5 ? cfg.movel : v > 1.5 ? (1 + cfg.movel) / 2 : 1;                 // alvo andando ou correndo é mais difícil
+        const postura = alt < 0.5 ? 0.75 : alt < 1 ? 0.88 : 1, pulo = ia.ar ? cfg.movel : 1;                      // deitado, agachado ou no ar também
+        const acertou = Math.random() < cfg.precisao * (ia.dist < 12 ? 1.3 : ia.dist > 28 ? 0.6 : 1) * mov * postura * pulo;
         if (!acertou) fim.add(new V3((Math.random() - 0.5) * 2.4, (Math.random() - 0.2) * 1.6, (Math.random() - 0.5) * 2.4));
         paraTodos({ t: "tiro", id: b.id, o: arr(olho), e: arr(fim) });
         if (acertou) ferirJogador(ia.alvo, cfg.dano, b.pos, b.id);
