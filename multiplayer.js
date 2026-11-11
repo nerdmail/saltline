@@ -831,7 +831,7 @@
   // animação: a passada e os braços dele são movidos pelo código. A cor da roupa muda de um para outro.
   let soldado = null, civilModelo = null;
   const CORPO_CIVIL = { cabeca: 1.72, raio: 0.142, peito: 0.15, tronco: 1.29 };      // onde ficam a cabeça e o tronco do modelo civil (m)
-  const MAO = { x: 0.03, y: -0.06, z: 0.17, giro: -1.5, eixo: "x", fecha: 1.1 };      // como a mão do modelo civil pega a arma
+  const MAO = { x: 0, y: -0.035, z: 0.075 };      // como a mão do modelo civil pega a arma
   const VIRAR_CIVIL = true;        // true se, com as animações adaptadas, o modelo civil sair virado para trás
   async function carregarModelos() {
     try {
@@ -983,10 +983,6 @@
     if (comArma) {
       b.grupo.updateMatrixWorld(true);
       alcancar(b, "Right", b.arma.localToWorld(b.semClipes ? new V3(MAO.x * b.lado, MAO.y, MAO.z) : new V3(0, -0.09, 0.07)), b.lado);
-      if (b.semClipes && b.maoRepouso) {
-        b.ossos.RightHand.quaternion.copy(b.maoRepouso).multiply(new G.THREE.Quaternion().setFromAxisAngle(new V3(0, 1, 0), MAO.giro));
-        for (const d of ["Index", "Middle", "Ring", "Pinky"]) for (const k of [1, 2, 3]) { const o = b.ossos["RightHand" + d + k]; if (o) o.rotation[MAO.eixo] = MAO.fecha; }
-      }
       if (longa) alcancar(b, "Left", b.arma.localToWorld(new V3(0, -0.04, -0.24)), -b.lado);
     } else if (o.vivo && o.pose === "preso") {          // pulsos amarrados (para trás no modelo civil, à frente nos outros)
       b.grupo.updateMatrixWorld(true);
