@@ -55,8 +55,9 @@
   };
   // onde cada time nasce [x, z]
   const BASE_POLICIA = [-32, 6];                       // lado oeste (portão)
-  // a casinha no alto da escada do galpão é a sala dos reféns (chão a 2,6 m de altura)
-  const SALA = { x0: -15.7, x1: -10.3, z0: -27.7, z1: -23.8, chao: 2.6, teto: 5.1, porta: [-11.65, -10.75], altoPorta: 4.45 };
+  // a casinha no alto da escada do galpão é a sala dos reféns (chão a 2,6 m de altura). No jogo original ela ia só até
+  // x1Antigo; aqui a parede leste é empurrada até x1, o que dobra o tamanho da sala.
+  const SALA = { x0: -15.7, x1: -4.9, x1Antigo: -10.3, z0: -27.7, z1: -23.8, chao: 2.6, teto: 5.1, porta: [-11.65, -10.75], altoPorta: 4.45 };
   const POLICIAIS_NA_SALA = [[-11.1, -25.2], [-11.1, -26.6]];      // os dois primeiros Policiais já começam com os reféns
   const NASCER_TERRORISTAS = [[27.4, 11.6], [20.9, 14.7], [23.4, 23.2], [18, 24.4], [27.2, -12.6], [29, 14], [27, 8], [18, 22.2]];   // espalhados no lado leste (cais)
   // posições no mapa [x, z]. O galpão (sala dos reféns) vai de x -16 a 12 e de z -28 a -11.
@@ -64,22 +65,22 @@
   // Duto de ar: sai do teto da sala dos reféns e dá a volta por dentro do galpão, lá no alto. Dentro dele só se anda deitado.
   // zn/zs = trechos norte e sul, xe/xw = trechos leste e oeste; a boca norte fica na beira leste do teto da sala (x0)
   // e a boca oeste na beira sul (zb). Chão do duto em y, com alt de altura por dentro.
-  const DUTO = { y: 5.1, alt: 1.3, zn: -24.28, zs: -14.2, xe: 3, xw: -13, x0: -10.3, zb: -23.8 };
-  const ALCAPAO = [-11.1, -24.68, -10.3, -23.88];        // abertura no teto da sala, em cima da escada de mão
+  const DUTO = { y: 5.1, alt: 1.3, zn: -24.28, zs: -14.2, xe: 3, xw: -13, x0: SALA.x1, zb: -23.8 };
+  const ALCAPAO = [SALA.x1 - 0.8, -24.68, SALA.x1, -23.88];        // abertura no teto da sala, em cima da escada de mão
   // escadas de mão: eixo onde a pessoa fica (x, z), de y0 a y1, e para que lado ela olha ao subir (nx, nz).
   // d = distância do eixo até a escada; curta = não passa do topo (termina dentro do duto)
   const ESCADAS = [
-    { x: -10.75, z: -24.28, y0: 2.6,  y1: 5.22, nx: 1,  nz: 0, d: 0.33 },               // da sala para o teto dela e a boca do duto
+    { x: SALA.x1 - 0.45, z: -24.28, y0: 2.6,  y1: 5.16, nx: 1,  nz: 0, d: 0.33 },               // da sala para o teto dela e a boca do duto
     { x: 3,      z: -24.28, y0: 5.1,  y1: 8.45, nx: 1,  nz: 0, d: 0.42 },               // do duto para o telhado (lado norte)
     { x: 0.15,   z: -14.2,  y0: 5.1,  y1: 8.45, nx: 0,  nz: 1, d: 0.42 },               // do duto para o telhado (lado sul)
-    { x: 3,      z: -19.2,  y0: 0.03, y1: 5.22, nx: 1,  nz: 0, d: 0.42, curta: true },  // do duto para o chão do galpão (leste)
-    { x: -13,    z: -16.5,  y0: 0.03, y1: 5.22, nx: -1, nz: 0, d: 0.42, curta: true },  // do duto para o chão do galpão (oeste)
+    { x: 3,      z: -19.2,  y0: 0.03, y1: 5.16, nx: 1,  nz: 0, d: 0.42, curta: true },  // do duto para o chão do galpão (leste)
+    { x: -13,    z: -16.5,  y0: 0.03, y1: 5.16, nx: -1, nz: 0, d: 0.42, curta: true },  // do duto para o chão do galpão (oeste)
     { x: -16.75, z: -19.5,  y0: 0,    y1: 9.7,  nx: 1,  nz: 0, d: 0.4 },                // do telhado para o chão, por fora (oeste)
     { x: 12.75,  z: -19.5,  y0: 0,    y1: 9.7,  nx: -1, nz: 0, d: 0.4 },                // do telhado para o chão, por fora (leste)
   ];
   // onde se anda deitado: [x de, z de, x até, z até, y de, y até] (as bocas e os buracos das escadas entram com folga)
   const DEITAR = [
-    [-10.9, DUTO.zn - 0.5, 3.5, DUTO.zn + 0.5, 4.85, 6.6],
+    [SALA.x1 - 0.6, DUTO.zn - 0.5, 3.5, DUTO.zn + 0.5, 4.85, 6.6],
     [2.5, DUTO.zn + 0.5, 3.5, DUTO.zs - 0.5, 4.85, 6.6], [2.5, -19.7, 3.5, -18.7, 3.4, 6.6],
     [-13.5, DUTO.zs - 0.5, 3.5, DUTO.zs + 0.5, 4.85, 6.6],
     [-13.5, -24.4, -12.5, DUTO.zs - 0.5, 4.85, 6.6], [-13.5, -17, -12.5, -16, 3.4, 6.6],
@@ -548,7 +549,18 @@
       <div class="mp-dif"><span>Dificuldade</span>${mp.anfitriao
         ? `<div class="seg">${Object.entries(DIFICULDADES).map(([k, v]) => `<button data-mp="dif-${k}" aria-pressed="${k === mp.dificuldade}">${v.nome}</button>`).join("")}</div>`
         : `<b>${d.nome}</b>`}</div>
-      <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times. Vence quem fizer ${CFG.rodadasParaVencer} rodadas. Refém só morre com tiro na cabeça e, depois de solto, anda armado e atira nos Terroristas. O galpão tem 4 saídas secretas numeradas; cada uma leva sempre ao mesmo lugar. Só os Terroristas pegam os explosivos espalhados pelo mapa. Todos nascem sem arma: pegue uma do chão passando por cima (G solta, só uma por vez).</p>
+      <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times. Vence quem fizer ${CFG.rodadasParaVencer} rodadas.</p>
+      <ul class="mp-regras">
+        <li><b>Objetivo</b> Policiais soltam os reféns (segure E) e levam ao ponto de resgate mostrado no painel da sala. Terroristas impedem até o tempo acabar.</li>
+        <li><b>Fim da rodada</b> Todos os reféns salvos, um refém morto, um time inteiro caído ou o tempo esgotado.</li>
+        <li><b>Armas</b> Todos nascem sem arma. Passe por cima para pegar (na sala, ficam no cabide). G solta, R recarrega, só uma por vez.</li>
+        <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · E abre porta e solta refém · P picha · Q granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
+        <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura metade de um tiro no corpo; o capacete salva de um tiro na cabeça. Cada um aguenta um tiro só.</li>
+        <li><b>Sala dos reféns</b> Tem 4 portas secretas numeradas (cada uma leva sempre ao mesmo lugar) e uma escada de mão até o duto de ar.</li>
+        <li><b>Duto e telhado</b> No duto só se rasteja; ele leva a escadas para o chão e para o telhado. Na escada: W sobe; olhando para baixo, W desce.</li>
+        <li><b>Queda</b> Cair de muito alto tira metade da vida.</li>
+        <li><b>Reféns</b> Só morrem com tiro na cabeça. Soltos, andam armados e atiram nos Terroristas.</li>
+      </ul>
       <div class="mp-acoes">
         ${mp.anfitriao ? `<button class="btn primary" data-mp="comecar">Começar partida</button>`
           : `<span class="mp-espera">${emAndamento ? "Partida em andamento — você entra na próxima rodada" : "Aguardando o anfitrião começar"}</span>`}
@@ -1347,9 +1359,37 @@
   function prepararSala() {
     if (salaPronta) return; salaPronta = true;
     const T = G.THREE, fis = G.physics, S = SALA, perto = (a, b) => Math.abs(a - b) < 0.12;
-    const macico = fis.boxes.find(b => perto(b.min.x, S.x0) && perto(b.max.x, S.x1) && perto(b.min.z, S.z0) && perto(b.max.z, S.z1) && b.max.y - b.min.y > 2);
+    const macico = fis.boxes.find(b => perto(b.min.x, S.x0) && perto(b.max.x, S.x1Antigo) && perto(b.min.z, S.z0) && perto(b.max.z, S.z1) && b.max.y - b.min.y > 2);
     if (macico) fis.removeBox(macico);
+    const dx = S.x1 - S.x1Antigo;                        // quanto a parede leste andou
+    // A parte nova da sala fica onde havia estantes do galpão mais altas que o piso dela: o que estava dentro some
+    // e o que atravessava o piso é cortado na altura dele (na colisão e no desenho).
+    const V = { x0: S.x1Antigo + 0.05, x1: S.x1 - 0.1, z0: S.z0 + 0.05, z1: S.z1 - 0.1, y0: S.chao + 0.05, y1: S.teto - 0.15 }, corte = S.chao - 0.14;
+    const dentro = (ax, ay, az, bx, by, bz) => bx > V.x0 && ax < V.x1 && bz > V.z0 && az < V.z1 && by > V.y0 && ay < V.y1 && by < S.teto + 0.3;
+    for (const b of [...fis.boxes]) if (dentro(b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z)) { if (b.min.y >= corte) fis.removeBox(b); else b.max.y = corte; }
+    const m4 = new T.Matrix4(), p3 = new V3(), nada = new T.Matrix4().makeScale(0, 0, 0);
+    G.scene.traverse(o => {
+      if (!o.isMesh || !o.parent || o.parent === cenario) return;
+      if (o.isInstancedMesh) {
+        let mudou = false;
+        for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m4); p3.setFromMatrixPosition(m4).applyMatrix4(o.matrixWorld); if (p3.x > V.x0 && p3.x < V.x1 && p3.z > V.z0 && p3.z < V.z1 && p3.y > corte && p3.y < V.y1) { o.setMatrixAt(i, nada); mudou = true; } }
+        if (mudou) o.instanceMatrix.needsUpdate = true;
+        return;
+      }
+      const pos = o.geometry.attributes.position;
+      if (o.parent.name !== "level-merged" || !pos || pos.count % 24) return;
+      let mudou = false;
+      for (let c = 0; c < pos.count; c += 24) {
+        let ax = 1e9, bx = -1e9, ay = 1e9, by = -1e9, az = 1e9, bz = -1e9;
+        for (let i = c; i < c + 24; i++) { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i); ax = Math.min(ax, x); bx = Math.max(bx, x); ay = Math.min(ay, y); by = Math.max(by, y); az = Math.min(az, z); bz = Math.max(bz, z); }
+        if (!dentro(ax, ay, az, bx, by, bz)) continue;
+        for (let i = c; i < c + 24; i++) { if (ay >= corte) pos.setXYZ(i, ax, corte, az); else if (pos.getY(i) > corte) pos.setY(i, corte); }
+        mudou = true;
+      }
+      if (mudou) pos.needsUpdate = true;
+    });
     const parede = (x0, y0, z0, x1, y1, z1) => fis.addBox([x0, y0, z0], [x1, y1, z1], { surface: "metal" });
+    parede(S.x1Antigo - 0.05, S.chao - 0.12, S.z0, S.x1 + 0.05, S.chao, S.z1 + 0.05);   // chão da parte nova
     parede(S.x0, S.chao, S.z0, S.x0 + 0.1, S.teto, S.z1);                    // oeste
     parede(S.x1 - 0.1, S.chao, S.z0, S.x1, S.teto, S.z1);                    // leste
     parede(S.x0, S.chao, S.z0, S.x1, S.teto, S.z0 + 0.1);                    // norte
@@ -1364,10 +1404,18 @@
     G.scene.traverse(o => {
       if (!o.isMesh || o.isInstancedMesh || !o.parent || o.parent.name !== "level-merged" || !o.matrixWorld.equals(identidade)) return;
       const nome = o.material.name, pos = o.geometry.attributes.position;
-      if (!["paint_white", "glass_dirty", "paint_grey", "wood_dark"].includes(nome) || pos.count % 24) return;
+      if (!["paint_white", "glass_dirty", "paint_grey", "wood_dark", "diamond_plate"].includes(nome) || pos.count % 24) return;
       for (let c = 0; c < pos.count; c += 24) {             // a geometria é feita de caixas de 24 vértices
         let ax = 1e9, bx = -1e9, ay = 1e9, by = -1e9, az = 1e9, bz = -1e9;
         for (let i = c; i < c + 24; i++) { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i); ax = Math.min(ax, x); bx = Math.max(bx, x); ay = Math.min(ay, y); by = Math.max(by, y); az = Math.min(az, z); bz = Math.max(bz, z); }
+        // peças da casinha que encostam na parede leste antiga (a própria parede, a janela dela, o piso, a laje, a
+        // faixa de cima da frente): a ponta leste vai junto com a parede nova
+        if (Math.abs(bx - S.x1Antigo) < 0.16 && ax > S.x0 - 0.2 && az > S.z0 - 0.2 && bz < S.z1 + 0.25 && ay > S.chao - 0.2 && by < S.teto + 0.1) {
+          for (let i = c; i < c + 24; i++) if (pos.getX(i) > S.x1Antigo - 0.16) pos.setX(i, pos.getX(i) + dx);
+          pos.needsUpdate = true; if (ax > S.x1Antigo - 0.16) ax += dx; bx += dx;
+          o.geometry.boundingSphere = null; o.geometry.boundingBox = null;
+        }
+        if (nome === "diamond_plate") continue;
         if (nome === "paint_white" && Math.abs(ay - (S.teto - 0.1)) < 0.06 && bx - ax > 5 && bz - az > 3.5) {      // laje do teto: abre o alçapão
           for (let i = c; i < c + 24; i++) if (pos.getZ(i) > A[1]) pos.setZ(i, A[1]);
           pos.needsUpdate = true;
@@ -1376,7 +1424,7 @@
           continue;
         }
         if (nome === "wood_dark") {             // a mesa ia de parede a parede, na frente das portas secretas: fica só o meio
-          if (ax < S.x0 + 0.6 && bx > S.x1 - 0.6 && az > S.z0 && bz < S.z0 + 1.3 && ay > S.chao && by < S.chao + 1) {
+          if (ax < S.x0 + 0.6 && bx > S.x1Antigo - 0.6 && az > S.z0 && bz < S.z0 + 1.3 && ay > S.chao && by < S.chao + 1) {
             for (let i = c; i < c + 24; i++) { const x = pos.getX(i); if (x < MESA[0]) pos.setX(i, MESA[0]); else if (x > MESA[1]) pos.setX(i, MESA[1]); }
             pos.needsUpdate = true; mesaCortada = true;
           }
@@ -1439,6 +1487,9 @@
       if (oeste) { g.position.set(S.x0 + 0.13, S.chao, s.de[1]); g.rotation.y = Math.PI / 2; } else g.position.set(s.de[0], S.chao, S.z0 + 0.13);
       cenario.add(g);
     });
+    // pilares e viga sob a parte nova da sala
+    for (const z of [S.z0 + 0.2, S.z1 - 0.1]) for (const x of [(S.x1Antigo + S.x1) / 2, S.x1 - 0.1]) caixa(cenario, aco, 0.16, S.chao - 0.1, 0.16, x, (S.chao - 0.1) / 2, z);
+    caixa(cenario, aco, S.x1 - S.x1Antigo, 0.14, 0.12, (S.x1 + S.x1Antigo) / 2, S.chao - 0.17, S.z1 - 0.1);
     // pés da mesa (ela ficou só com o meio do tampo)
     pesMesa = new T.Group(); pesMesa.visible = false; cenario.add(pesMesa);
     for (const x of [MESA[0] + 0.05, MESA[1] - 0.05]) caixa(pesMesa, aco, 0.05, 0.7, 0.6, x, S.chao + 0.35, -27.03);
@@ -1538,6 +1589,8 @@
       if (s.y1 - s.y0 > 6) {                          // no topo das escadas de fora, guarda-corpo atrás de quem desce (para não passar direto)
         const bx = s.x - s.nx * 0.47, bz = s.z - s.nz * 0.47, ax = Math.abs(lx) * 0.45 + 0.02, az = Math.abs(lz) * 0.45 + 0.02;
         fis.addBox([bx - ax, s.y1 - 1.3, bz - az], [bx + ax, s.y1 + 1.1, bz + az], { surface: "metal", playerOnly: true });
+        for (const k of [-0.47, 0.47])                // e dos dois lados, para ninguém sair de lado lá em cima
+          fis.addBox([Math.min(bx, cx) + lx * k - 0.02, s.y1 - 1.3, Math.min(bz, cz) + lz * k - 0.02], [Math.max(bx, cx) + lx * k + 0.02, s.y1 + 1.1, Math.max(bz, cz) + lz * k + 0.02], { surface: "metal", playerOnly: true });
         for (const y of [s.y1 - 1.2, s.y1 - 0.5, s.y1 + 0.2, s.y1 + 0.9]) {
           bloco(amarelo, bx - ax, y - 0.02, bz - az, bx + ax, y + 0.02, bz + az);
           for (const k of [-0.45, 0.45]) bloco(amarelo, Math.min(bx, cx) + lx * k - 0.02, y - 0.02, Math.min(bz, cz) + lz * k - 0.02, Math.max(bx, cx) + lx * k + 0.02, y + 0.02, Math.max(bz, cz) + lz * k + 0.02);
@@ -1573,8 +1626,10 @@
     if (e) {
       let v = sobe * (p.pitch > -0.5 ? 1 : -1) * 3.2;    // W sobe; olhando para baixo, W desce (S faz o contrário)
       if ((v > 0 && p.pos.y >= e.y1) || (v < 0 && p.pos.y <= e.y0 + 0.02)) v = 0;
+      if (p.pos.y > e.y1 + 0.03) v = -1.5;               // passou do topo: volta para a altura do piso
       p.vel.y = v + t.gravity * dt * 0.5;
-      if (p.pos.y > e.y0 + 0.3 && (p.pos.y < e.y1 - 0.2 || querDescer)) {         // no meio da escada (ou começando a descer) fica preso ao eixo dela
+      // uma vez na escada, só sobe ou desce: fica preso ao eixo dela. Só se solta embaixo, ou no topo andando para a frente
+      if (p.pos.y > e.y0 + 0.3 && !(p.pos.y >= e.y1 - 0.2 && !querDescer && sobe > 0.3)) {
         const q = Math.min(1, 8 * dt); p.vel.x = 0; p.vel.z = 0;
         p.pos.x += (e.x - p.pos.x) * q; p.pos.z += (e.z - p.pos.z) * q;
       }

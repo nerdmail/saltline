@@ -10,6 +10,8 @@
 .mp-linha { font: 500 18px/1.4 var(--f-label); letter-spacing: .04em; margin: 14px 0 4px; }
 .mp-nota { font: 400 11px/1.5 var(--f-mono); letter-spacing: .04em; color: var(--bone-dim); margin: 12px 0 0; }
 .mp-alerta { color: var(--signal); }
+.mp-regras { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; font: 400 12px/1.45 var(--f-mono); letter-spacing: .02em; color: var(--bone-dim); }
+.mp-regras b { display: inline-block; min-width: 132px; font: 600 12px/1.45 var(--f-label); letter-spacing: .14em; text-transform: uppercase; color: var(--bone); }
 .mp-resultado { font: 700 20px/1.2 var(--f-display); letter-spacing: .08em; text-transform: uppercase; color: var(--signal); margin: 0 0 14px; }
 .mp-form, .mp-link { display: flex; gap: 10px; align-items: stretch; }
 .mp-campo { flex: 1 1 auto; min-width: 0; font: 500 14px/1 var(--f-mono); color: var(--bone); background: rgba(232, 228, 218, .06);
