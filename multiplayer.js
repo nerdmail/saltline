@@ -604,6 +604,7 @@
         <li><b>Armas</b> Todos nascem com a faca. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
         <li><b>Explosivos</b> Pegue passando por cima. 4 joga a granada; B arma a bomba no chão onde você está; V arma a bomba-relógio (T muda o tempo). Qualquer um desarma segurando E perto dela.</li>
         <li><b>Bots</b> Quando a partida começa, cada time é completado com bots até ficar com 5 (no máximo 10 na partida). O nome deles começa com "Bot". Eles só combatem, não mexem nos reféns, e ficam mais difíceis conforme a dificuldade da sala.</li>
+        <li><b>Quem cai</b> Fica assistindo um jogador vivo até a rodada acabar. A barra de espaço troca de jogador.</li>
         <li><b>Placar</b> Segure Tab para ver quem está vivo, os abates e as vitórias de cada time.</li>
         <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q troca de arma (1 arma, 2 pistola, 3 faca) · 4 granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
         <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura metade de um tiro no corpo; o capacete salva de um tiro na cabeça. Cada um aguenta um tiro só.</li>
@@ -689,7 +690,7 @@
         let pt = pts[k];
         if (j.bot && pt[1] > 1) { const q = pisavel(BASE_POLICIA[0] + (Math.random() - 0.5) * 6, BASE_POLICIA[1] + (Math.random() - 0.5) * 6); pt = [q[0], 0, q[1], pt[3]]; }      // bot não nasce na sala dos reféns
         nasc[j.id] = pt; j.vivo = true; j.naRodada = true; j.pos.set(pt[0], j.bot ? pt[1] : 0, pt[2]); j.cur.copy(j.pos);
-        if (j.bot) { j.hp = (BOTS.niveis[mp.dificuldade] || BOTS.niveis.medio).vida; j.yaw = pt[3] || 0; j.vel.set(0, 0, 0); j.noChao = true; j.ia = { pensarT: Math.random() * 0.4, alvo: null, visto: false, dist: 99, caminho: null, caminhoT: 0, tiroT: 1 + Math.random(), ladoT: 0, lado: 1 }; }
+        if (j.bot) { j.hp = (BOTS.niveis[mp.dificuldade] || BOTS.niveis.medio).vida; j.yaw = pt[3] || 0; j.vel.set(0, 0, 0); j.pisando = true; j.noChao = false; j.ia = { pensarT: Math.random() * 0.4, alvo: null, visto: false, dist: 99, caminho: null, caminhoT: 0, tiroT: 1 + Math.random(), ladoT: 0, lado: 1 }; }
       });
     }
     try { G.enemies.clear(); } catch {}
@@ -1299,7 +1300,7 @@
       soltarArma();
       G.hud.setPrompt(null);
       enviar({ t: "morri", por });
-      G.hud.message("Você caiu — aguarde a próxima rodada", 8);
+      G.hud.message("Você caiu — aguarde a próxima rodada", 3); mp.morriEm = performance.now(); mp.assistindo = null;
     });
   }
   function tiroRemoto(m) {
@@ -2057,9 +2058,9 @@
         wx = -dz / d * ia.lado * 0.55; wz = dx / d * ia.lado * 0.55;
       }
       b.vel.x = wx * cfg.vel; b.vel.z = wz * cfg.vel; b.vel.y -= 20 * dt;
-      let res = null; try { res = G.physics.moveCapsule(b.pos, b.vel, dt, 0.3, 1.7, b.noChao); } catch {}
-      b.noChao = !res || !!res.onGround;
-      if (b.noChao && b.vel.y < 0) b.vel.y = 0;
+      let res = null; try { res = G.physics.moveCapsule(b.pos, b.vel, dt, 0.3, 1.7, b.pisando); } catch {}
+      b.pisando = !res || !!res.onGround;
+      if (b.pisando && b.vel.y < 0) b.vel.y = 0;
       if (b.pos.y < -1) { b.pos.y = 0; b.vel.y = 0; }
       if (ia.visto && ia.alvo) { const p = posDe(ia.alvo); b.yaw = Math.atan2(-(p.x - b.pos.x), -(p.z - b.pos.z)); b.pitch = Math.atan2(p.y - b.pos.y, ia.dist || 1) * 0.8; }
       else if (wx || wz) { b.yaw = Math.atan2(-wx, -wz); b.pitch = 0; }
@@ -2200,6 +2201,31 @@
       if (!G.physics.boxes.some(b => x > b.min.x - 0.35 && x < b.max.x + 0.35 && z > b.min.z - 0.35 && z < b.max.z + 0.35 && b.max.y > 0.3 && b.min.y < 1.8)) { p.pos.set(x, 0.05, z); break; }
     }
     p.vel.set(0, 0, 0); mp.quedaTopo = p.pos.y;
+  });
+
+  /* ------------------------------------------------------------- espectador */
+  // Quem caiu (ou entrou no meio da rodada) assiste um jogador vivo, sorteado, com a câmera atrás dele, até a rodada
+  // acabar. Espaço passa para outro. Chamado depois de o jogo posicionar a câmera, a cada quadro.
+  function vivosParaAssistir() { return [...mp.jogadores.values()].filter(j => j.id !== mp.meuId && j.vivo); }
+  function assistir() {
+    const p = G.player;
+    if (!emRodada() || p.alive || mp.fase === "lobby") { mp.assistindo = null; return; }
+    if (performance.now() - (mp.morriEm || 0) < 2200) return;            // primeiro vê a própria queda
+    let alvo = mp.assistindo && mp.jogadores.get(mp.assistindo);
+    if (!alvo || !alvo.vivo) { const l = vivosParaAssistir(); alvo = l[Math.floor(Math.random() * l.length)] || null; mp.assistindo = alvo ? alvo.id : null; }
+    if (!alvo) return;
+    const T = G.THREE, cabeca = new V3(alvo.cur.x, alvo.cur.y + (alvo.deitado ? 0.6 : alvo.agachado ? 1.2 : 1.65), alvo.cur.z);
+    const tras = new V3(Math.sin(alvo.yaw), 0.28, Math.cos(alvo.yaw)).normalize(); let dist = 3;
+    try { const h = G.physics.raycast(cabeca, tras, 3.2); if (h) dist = Math.max(0.5, h.dist - 0.25); } catch {}
+    G.camera.position.copy(cabeca).addScaledVector(tras, dist);
+    G.camera.lookAt(cabeca.x - Math.sin(alvo.yaw) * 4, cabeca.y + Math.sin(alvo.pitch || 0) * 4, cabeca.z - Math.cos(alvo.yaw) * 4);
+    try { const post = G.render.post || {}; post.saturation = satOriginal; post.lowHealth = 0; post.damage = 0; } catch {}      // sem o efeito de quem está morrendo
+    G.hud.message("Assistindo " + alvo.nome + " (" + TIMES[alvo.time].nome + ") · espaço troca", 0.3);
+  }
+  window.addEventListener("keydown", ev => {
+    if (ev.code !== "Space" || ev.repeat || !emRodada() || G.player.alive || !mp.assistindo) return;
+    const l = vivosParaAssistir(), k = l.findIndex(j => j.id === mp.assistindo);
+    if (l.length) mp.assistindo = l[(k + 1) % l.length].id;
   });
 
   /* ---------------------------------------------------------------- pichação */
@@ -2737,7 +2763,8 @@
       const p = G.player, j = eu(), post = G.render.post || {};
       post.fade = 0;
       if (post.flash > 0) post.flash = Math.max(0, post.flash - dt * 2);
-      if (!p.alive) post.saturation = Math.max(0.15, (post.saturation ?? 1) - dt * 0.6);
+      if (!p.alive && !mp.assistindo) post.saturation = Math.max(0.15, (post.saturation ?? 1) - dt * 0.6);
+      else if (mp.assistindo) post.saturation = satOriginal;
       if (mp.fase === "preparo") {
         mp.preparoT -= dt;
         if (mp.preparoT <= 0) { mp.fase = "valendo"; p.enabled = p.alive; G.hud.warn("Valendo", 1.6); tocar("objective"); }
@@ -2789,6 +2816,7 @@
     const armaAtualiza = G.weapon.update;            // deitado, a câmera (e de onde sai o tiro) desce até perto do chão
     G.weapon.update = function (...a) {
       if (emRodada() && mp.deitado && G.player.alive) { G.camera.position.y -= 0.55; G.player.eye.y -= 0.55; }
+      assistir();
       return armaAtualiza.apply(this, a);
     };
     vidaEl = document.createElement("div"); vidaEl.className = "mp-vida"; vidaEl.hidden = true; document.getElementById("app").appendChild(vidaEl);
