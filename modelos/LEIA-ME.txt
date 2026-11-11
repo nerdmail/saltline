@@ -19,3 +19,7 @@ animacoes.json (versão 37): além de parado/andar/correr (Xbot.glb do Three.js)
 agachado parado, agachado andando, no ar e caindo morto. São animações Mixamo (Adobe), baixadas do repositório
 github.com/MisterYI/deevid-mixamo-assets (Crawling_Backwards tocada ao contrário, Skinning_Test, Idle_Crouching_Aiming,
 Crouch_Walk_Forward, Jump e Death) e convertidas para rotações relativas ao repouso em T.
+
+animacoes.json (versão 38): parado, andar e correr também passaram a ser clipes Mixamo com fuzil (Rifle_Aiming_Idle,
+Walk_With_Rifle, Rifle_Run), do mesmo repositório; o arquivo guarda o esqueleto de repouso deles ("esq") para a conversão
+ao modelo civil ser feita pelo espaço do mundo.
