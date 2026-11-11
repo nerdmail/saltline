@@ -105,3 +105,9 @@
 .mp-pichos-grade img { display: block; width: 150px; height: 150px; }
 .mp-pichos-grade span { position: absolute; left: 6px; top: 4px; font: 700 14px/1 var(--f-mono); color: #15171a; }
 @media (max-width: 540px) { .mp-pichos-grade { grid-template-columns: repeat(2, 150px); } }
+
+/* portão de entrada: um clique para entrar em tela cheia */
+.mp-portao { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; background: rgba(6, 8, 10, .88); cursor: pointer; text-align: center; color: var(--bone); }
+.mp-portao[hidden] { display: none; }
+.mp-portao b { display: block; font: 900 64px/1 var(--f-display); letter-spacing: .06em; color: var(--signal); }
+.mp-portao span { display: block; margin-top: 16px; font: 600 16px/1.2 var(--f-label); letter-spacing: .22em; text-transform: uppercase; }

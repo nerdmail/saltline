@@ -695,6 +695,7 @@
     window.addEventListener(tipo, ev => {
       if (!(tela && !tela.hidden)) return;
       ev.stopImmediatePropagation();
+      if (tipo === "keydown") try { telaCheia(); } catch {}      // na sala de espera as teclas param aqui: a tela cheia é pedida daqui mesmo
       if (tipo === "keydown" && ev.code === "Escape" && mp.menuAberto) { ev.preventDefault(); menuDaPartida(false); }      // Esc de novo fecha o menu
     }, true);
   // MENU DA PARTIDA (Esc): voltar ao jogo, voltar à sala de espera ou sair da sala. A partida não para para os outros.
@@ -3594,7 +3595,22 @@
       if (r && r.then) r.then(() => { try { if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(["Escape"]); } catch {} }).catch(() => {});
     } catch {}
   };
-  for (const tipo of ["pointerdown", "keydown"]) window.addEventListener(tipo, telaCheia, true);
+  for (const tipo of ["pointerdown", "pointerup", "click", "touchend", "keydown"]) window.addEventListener(tipo, telaCheia, true);
+  document.addEventListener("fullscreenchange", () => { try { window.dispatchEvent(new Event("resize")); } catch {} });      // o jogo refaz o tamanho da tela
+  // PORTÃO DE ENTRADA: como a tela cheia depende de um clique, o jogo abre com uma tela pedindo esse clique. Ela volta sempre que
+  // alguém sai da tela cheia fora de uma rodada (dentro da rodada, o próximo clique já devolve a tela cheia).
+  const portao = document.createElement("div"); portao.className = "mp-portao";
+  portao.innerHTML = "<div><b>PEBACITY</b><span>Clique para jogar em tela cheia</span></div>";
+  const mostrarPortao = () => {
+    const el = document.documentElement, cheio = document.fullscreenElement || document.webkitFullscreenElement;
+    portao.hidden = !!cheio || !(el.requestFullscreen || el.webkitRequestFullscreen) || emRodada();
+  };
+  portao.addEventListener("click", () => { telaCheia(); portao.hidden = true; });
+  (document.getElementById("app") || document.body).appendChild(portao); mostrarPortao();
+  for (const tipo of ["fullscreenchange", "webkitfullscreenchange"]) document.addEventListener(tipo, mostrarPortao);
+  // SEM CHUVA: o tempo do jogo fica seco (a chuva atrapalhava a visão)
+  const semChuva = () => { try { const g = window.__G; for (const k in g) if (g[k] && typeof g[k].setRain === "function") g[k].setRain(0); } catch {} };
+  setInterval(semChuva, 2000);
   const espera = setInterval(() => {
     if (window.__fatal) return clearInterval(espera);
     if (window.__ready && window.__G && window.__G.game && window.__G.game.menus) { clearInterval(espera); try { iniciar(); } catch (e) { console.error("[mp] não iniciou", e); } }
