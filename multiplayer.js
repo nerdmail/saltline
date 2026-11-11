@@ -843,7 +843,19 @@
       try {
         const c = await carregador.loadAsync("./modelos/civil2.glb");
         g.scene.updateMatrixWorld(true); c.scene.updateMatrixWorld(true);
-        const clips = [];          // sem animação pronta: pernas e braços são movidos pelo código (ver posarModelo)
+        // o modelo civil não traz animação: usa as de parado, andar e correr guardadas em modelos/animacoes.json (tiradas de outro
+        // modelo com os mesmos ossos). Lá cada rotação é em relação a um repouso neutro; aqui ela é somada ao repouso de cada osso.
+        let clips = [];
+        try {
+          const T = G.THREE, dados = await (await fetch("./modelos/animacoes.json")).json(), repouso = {}, q = new T.Quaternion();
+          c.scene.traverse(o => { if (o.isBone) repouso[o.name] = o.quaternion.clone(); });
+          clips = dados.clips.map(k => new T.AnimationClip(k.nome, k.dur, k.faixas.filter(f => repouso[f.o]).map(f => {
+            const v = f.v.slice();
+            for (let i = 0; i < v.length; i += 4) q.fromArray(v, i).premultiply(repouso[f.o]).toArray(v, i);
+            return new T.QuaternionKeyframeTrack(f.o + ".quaternion", f.t, v);
+          })));
+          if (!clips.find(k => k.name === "Idle") || !clips.find(k => k.name === "Walk") || !clips.find(k => k.name === "Run")) clips = [];
+        } catch (e) { console.warn("[mp] as animações do modelo civil não carregaram; pernas e braços ficam movidos pelo código", e); clips = []; }
         if (CARRO.ligado) try { const k = await carregador.loadAsync("./modelos/carro.glb"); montarCarro(k); } catch (e) { console.warn("[mp] o modelo do carro não carregou; fica o carro feito por código", e); }
         civilModelo = { cena: c.scene, clips, clonar: SU.clone, mats: {}, virado: VIRAR_CIVIL };
         for (const j of mp.jogadores.values()) if (j.time === "t") removerBoneco(j);
@@ -921,7 +933,7 @@
     const repouso = {}, qm = modelo.getWorldQuaternion(new T.Quaternion()).invert();
     for (const [n, f] of [["LeftUpLeg", "LeftLeg"], ["LeftLeg", "LeftFoot"], ["RightUpLeg", "RightLeg"], ["RightLeg", "RightFoot"], ["LeftArm", "LeftForeArm"], ["LeftForeArm", "LeftHand"], ["RightArm", "RightForeArm"], ["RightForeArm", "RightHand"]])
       if (ossos[n] && ossos[f]) repouso[n] = { q: qm.clone().multiply(ossos[n].getWorldQuaternion(new T.Quaternion())), dir: ossos[f].getWorldPosition(new V3()).sub(ossos[n].getWorldPosition(new V3())).applyQuaternion(qm).normalize() };
-    const b = { grupo, modelo, mixer, acoes, repouso, semClipes: !fonte.clips.length, ossos, pivo, arma, placa, capacete: capaceteM || visor || new T.Group(), colete: coleteM || new T.Group(), bone: new T.Group(), cordas: [], armaChave: null, lado,
+    const b = { grupo, modelo, mixer, acoes, repouso, semClipes: !fonte.clips.length, rig: fonte === civilModelo, ossos, pivo, arma, placa, capacete: capaceteM || visor || new T.Group(), colete: coleteM || new T.Group(), bone: new T.Group(), cordas: [], armaChave: null, lado,
       maoRepouso: ossos.RightHand ? ossos.RightHand.quaternion.clone() : null,
       braco: dist("RightArm", "RightForeArm"), ante: dist("RightForeArm", "RightHand"), ult: new V3(), andar: 0, fase: 0 };
     if (civil) { armarBoneco(b, "p_pistola"); arma.visible = false; }
@@ -930,7 +942,7 @@
   // vira um osso para que ele aponte numa direção do mundo. No modelo sem animação pronta gira a partir da pose de
   // repouso (não torce o membro); no soldado, o eixo y do osso vai até o osso seguinte.
   function apontarOsso(osso, dir, b, nome) {
-    const T = G.THREE, pai = osso.parent.getWorldQuaternion(new T.Quaternion()).invert(), r = b && b.semClipes && b.repouso[nome];
+    const T = G.THREE, pai = osso.parent.getWorldQuaternion(new T.Quaternion()).invert(), r = b && b.rig && b.repouso[nome];
     if (!r) return void osso.quaternion.copy(pai.multiply(new T.Quaternion().setFromUnitVectors(new V3(0, 1, 0), dir.clone().normalize())));
     const qm = b.modelo.getWorldQuaternion(new T.Quaternion()), local = dir.clone().normalize().applyQuaternion(qm.clone().invert());
     osso.quaternion.copy(pai.multiply(qm).multiply(new T.Quaternion().setFromUnitVectors(r.dir, local)).multiply(r.q));
@@ -952,7 +964,7 @@
   }
   // o soldado no lugar: animação conforme a velocidade, arma apontada (com as mãos nela), agachado, rastejando e caído
   function posarModelo(b, cur, yaw, k, dt, o) {
-    const vel = dt > 0 ? Math.hypot(cur.x - b.ult.x, cur.z - b.ult.z) / dt : 0, deitado = !!o.deitado && o.vivo, m = b.modelo, ajoelhado = !!o.ajoelhado && o.vivo && !deitado && b.semClipes;
+    const vel = dt > 0 ? Math.hypot(cur.x - b.ult.x, cur.z - b.ult.z) / dt : 0, deitado = !!o.deitado && o.vivo, m = b.modelo, ajoelhado = !!o.ajoelhado && o.vivo && !deitado && b.rig;
     b.ult.copy(cur); b.grupo.position.copy(cur);
     let d = yaw - b.grupo.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); b.grupo.rotation.y += d * k;
     b.andar += (Math.min(vel, 9) - b.andar) * Math.min(1, 10 * dt);
@@ -972,6 +984,7 @@
       for (const n in b.acoes) { const a = b.acoes[n], w = a.getEffectiveWeight(); a.setEffectiveWeight(w + ((n === alvo ? 1 : 0) - w) * Math.min(1, 8 * dt)); }
       b.acoes.Walk.timeScale = Math.max(0.6, Math.min(1.8, v / 1.5)); b.acoes.Run.timeScale = Math.max(0.7, Math.min(1.7, v / 4.2));
       if (o.vivo) b.mixer.update(dt);
+      if (ajoelhado) { b.grupo.updateMatrixWorld(true); for (const L of ["Left", "Right"]) { apontarLocal(b, L + "UpLeg", 0, -1, -0.1); apontarLocal(b, L + "Leg", 0, -0.12, 1); } }      // de joelhos por cima da animação
     }
     m.rotation.x += ((!o.vivo || deitado ? -Math.PI / 2 : 0) - m.rotation.x) * k;          // caído ou rastejando: de bruços
     m.position.y += ((!o.vivo ? 0.18 : deitado ? 0.22 : ajoelhado ? -0.4 : 0) - m.position.y) * k;
@@ -982,12 +995,12 @@
     b.arma.visible = comArma;
     if (comArma) {
       b.grupo.updateMatrixWorld(true);
-      alcancar(b, "Right", b.arma.localToWorld(b.semClipes ? new V3(MAO.x * b.lado, MAO.y, MAO.z) : new V3(0, -0.09, 0.07)), b.lado);
+      alcancar(b, "Right", b.arma.localToWorld(b.rig ? new V3(MAO.x * b.lado, MAO.y, MAO.z) : new V3(0, -0.09, 0.07)), b.lado);
       if (longa) alcancar(b, "Left", b.arma.localToWorld(new V3(0, -0.04, -0.24)), -b.lado);
-      else if (b.semClipes && o.pose === "pistola" && !(ARMAS[b.armaChave] || {}).faca) alcancar(b, "Left", b.arma.localToWorld(new V3(-0.035, -0.075, 0.06)), -b.lado);      // pistola com as duas mãos
+      else if (b.rig && o.pose === "pistola" && !(ARMAS[b.armaChave] || {}).faca) alcancar(b, "Left", b.arma.localToWorld(new V3(-0.035, -0.075, 0.06)), -b.lado);      // pistola com as duas mãos
     } else if (o.vivo && o.pose === "preso") {          // pulsos amarrados (para trás no modelo civil, à frente nos outros)
       b.grupo.updateMatrixWorld(true);
-      const z = b.semClipes ? 0.17 : -0.2;
+      const z = b.rig ? 0.17 : -0.2;
       alcancar(b, "Right", m.localToWorld(new V3(0.05 * b.lado, 0.97, z)), b.lado); alcancar(b, "Left", m.localToWorld(new V3(-0.05 * b.lado, 0.97, z)), -b.lado);
     }
   }

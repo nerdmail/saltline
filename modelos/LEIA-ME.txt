@@ -4,7 +4,9 @@ soldado.glb  Policiais. Arquivo "Soldier.glb" dos exemplos do Three.js (r180):
              https://github.com/mrdoob/three.js/tree/r180/examples/models/gltf
              Personagem e animações de origem Mixamo (Adobe).
 civil2.glb   Reféns e Terroristas. Arquivo "readyplayer.me.glb" dos mesmos exemplos (avatar Ready Player Me).
-             Não traz animação: a passada e os braços são movidos pelo código do jogo.
+             Não traz animação: usa as de animacoes.json.
+animacoes.json  Animações de parado, andar e correr tiradas do arquivo "Xbot.glb" dos mesmos exemplos (origem Mixamo),
+             guardadas só como rotações dos ossos.
 
 carro.glb    O carro. Arquivo "CesiumMilkTruck.glb" dos modelos de exemplo do glTF (Khronos):
              https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CesiumMilkTruck
