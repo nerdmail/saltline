@@ -3126,8 +3126,8 @@
       const j = mp.jogadores.get(id); if (!j || j.bot) continue;      // bot já nasce armado: não precisa de armas no chão
       const chaves = Object.keys(ARMAS).filter(k => ARMAS[k].time === j.time && !ARMAS[k].faca && !ARMAS[k].reserva), dentro = pt[1] > 1, fila = dentro ? naSala++ : 0;
       chaves.forEach((k, n) => {
-        if (dentro) return lista.push([mp.proxId++, k, +(-15.2 + n * 0.56 + (fila ? 0.12 : -0.12)).toFixed(2), +(SALA.z1 - 0.35).toFixed(2), SALA.chao, 1]);   // no cabide sob a janela
-        const ang = n / chaves.length * Math.PI * 2, q = pisavel(pt[0] + Math.cos(ang) * 2, pt[2] + Math.sin(ang) * 2);
+        if (dentro) return lista.push([mp.proxId++, k, +([-15.1, -13.9, -12.7, -9.9, -8.7, -7.5][n % 6] + (fila ? 0.6 : 0)).toFixed(2), +(SALA.z1 - 0.35).toFixed(2), SALA.chao, 1]);   // no cabide sob a janela, bem espaçadas e fora do vão da porta
+        const ang = n / chaves.length * Math.PI * 2, q = pisavel(pt[0] + Math.cos(ang) * 3.8, pt[2] + Math.sin(ang) * 3.8);      // em roda larga, uns 4 m uma da outra
         lista.push([mp.proxId++, k, +q[0].toFixed(2), +q[1].toFixed(2), 0]);
       });
     }
@@ -3135,7 +3135,7 @@
     for (const [t, cx, cz] of [["p", BASE_POLICIA[0] + 3.5, BASE_POLICIA[1]], ["t", 24, 15]]) {
       const chaves = Object.keys(ARMAS).filter(k => ARMAS[k].time === t && !ARMAS[k].faca && !ARMAS[k].reserva);
       chaves.forEach((k, n) => {
-        const ang = n / chaves.length * Math.PI * 2, q = pisavel(cx + Math.cos(ang) * 2.8, cz + Math.sin(ang) * 2.8);
+        const ang = n / chaves.length * Math.PI * 2, q = pisavel(cx + Math.cos(ang + 0.5) * 5.5, cz + Math.sin(ang + 0.5) * 5.5);
         lista.push([mp.proxId++, k, +q[0].toFixed(2), +q[1].toFixed(2), 0]);
       });
     }
