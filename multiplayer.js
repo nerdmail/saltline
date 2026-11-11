@@ -94,10 +94,10 @@
   // (não soltam nem levam refém) e ficam mais duros e mais certeiros conforme a dificuldade da sala.
   const BOTS = { porTime: 5, visao: 45, vel: 3.6, nomes: ["Brasa", "Tigre", "Zulu", "Corvo", "Farol", "Lince", "Rato", "Vespa", "Trovão", "Jacaré", "Onça", "Cobra"],
     niveis: {
-      facil:   { vida: 55,  precisao: 0.16, cadencia: 1.2,  dano: 9 },
-      medio:   { vida: 100, precisao: 0.28, cadencia: 0.85, dano: 13 },
-      dificil: { vida: 150, precisao: 0.42, cadencia: 0.6,  dano: 17 },
-      treta:   { vida: 200, precisao: 0.58, cadencia: 0.42, dano: 21 },
+      facil:   { vida: 55,  precisao: 0.16, cadencia: 1.2,  dano: 9,  vel: 3.2, reflexo: 0.6 },
+      medio:   { vida: 100, precisao: 0.28, cadencia: 0.85, dano: 13, vel: 3.8, reflexo: 0.4 },
+      dificil: { vida: 150, precisao: 0.42, cadencia: 0.6,  dano: 17, vel: 4.5, reflexo: 0.25 },
+      treta:   { vida: 200, precisao: 0.58, cadencia: 0.42, dano: 21, vel: 5.2, reflexo: 0.15 },
     } };
   const QUEDA = { altura: 3.2, dano: 0.5 };     // cair de mais que isso tira metade da vida (só de jogador; refém não se machuca)
   const MESA = [-13.9, -12.1, -26.68];                                  // mesa encostada na parede norte: x de, x até, z da frente
@@ -229,7 +229,7 @@
     });
     peer.on("connection", con => {
       con.on("open", () => {
-        if ([...mp.jogadores.values()].filter(x => !x.bot).length >= CFG.maxJogadores) { con.send({ t: "recusa", motivo: "A sala está cheia." }); return setTimeout(() => con.close(), 500); }
+        if ([...mp.jogadores.values()].filter(x => !x.bot).length >= CFG.maxJogadores) { con.send({ t: "recusa", motivo: "A sala já está com 10 jogadores, que é o máximo da partida." }); return setTimeout(() => con.close(), 500); }
         mp.cons.set(con.peer, con);
       });
       con.on("data", msg => { if (msg && typeof msg === "object") doJogador(con.peer, msg); });
@@ -603,7 +603,7 @@
         <li><b>Lugares altos</b> Vários containers, o telhado do galpão e um mirante na torre do guindaste têm escada de mão. Para descer: olhe para baixo e aperte W.</li>
         <li><b>Armas</b> Todos nascem com a faca. Passe por cima de uma arma para pegar (na sala, ficam no cabide). G solta a arma e você volta para a faca. R recarrega.</li>
         <li><b>Explosivos</b> Pegue passando por cima. 4 joga a granada; B arma a bomba no chão onde você está; V arma a bomba-relógio (T muda o tempo). Qualquer um desarma segurando E perto dela.</li>
-        <li><b>Bots</b> Cada time é completado com bots até ficar com 5. Eles só combatem, não mexem nos reféns, e ficam mais difíceis conforme a dificuldade da sala.</li>
+        <li><b>Bots</b> Quando a partida começa, cada time é completado com bots até ficar com 5 (no máximo 10 na partida). O nome deles começa com "Bot". Eles só combatem, não mexem nos reféns, e ficam mais difíceis conforme a dificuldade da sala.</li>
         <li><b>Placar</b> Segure Tab para ver quem está vivo, os abates e as vitórias de cada time.</li>
         <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q troca de arma (1 arma, 2 pistola, 3 faca) · 4 granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
         <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura metade de um tiro no corpo; o capacete salva de um tiro na cabeça. Cada um aguenta um tiro só.</li>
@@ -1991,12 +1991,16 @@
   /* -------------------------------------------------------------------- bots */
   // anfitrião, no começo de cada rodada: cria ou tira bots para cada time ficar com BOTS.porTime
   function completarComBots() {
+    const gente = t => [...mp.jogadores.values()].filter(j => j.time === t && !j.bot).length;
+    const querem = { p: Math.max(0, BOTS.porTime - gente("p")), t: Math.max(0, BOTS.porTime - gente("t")) };
+    let sobra = gente("p") + gente("t") + querem.p + querem.t - CFG.maxJogadores;      // nunca mais de 10 na partida, contando os bots
+    for (const t of ["p", "t"]) { const corta = Math.min(querem[t], Math.max(0, sobra)); querem[t] -= corta; sobra -= corta; }
     for (const t of ["p", "t"]) {
-      const gente = [...mp.jogadores.values()].filter(j => j.time === t && !j.bot).length, bots = [...mp.jogadores.values()].filter(j => j.time === t && j.bot);
-      let falta = Math.max(0, BOTS.porTime - gente) - bots.length;
+      const bots = [...mp.jogadores.values()].filter(j => j.time === t && j.bot);
+      let falta = querem[t] - bots.length;
       for (; falta > 0; falta--) {
         const id = "bot-" + (mp.proxBot = (mp.proxBot || 0) + 1), usados = new Set([...mp.jogadores.values()].map(j => j.nome));
-        const nome = BOTS.nomes.find(n => !usados.has(n)) || "Bot " + mp.proxBot;
+        const nome = "Bot " + (BOTS.nomes.find(n => !usados.has("Bot " + n)) || mp.proxBot);      // todo bot começa com "Bot"
         const j = { id, nome, time: t, bot: true, vivo: false, naRodada: false, pos: new V3(0, -50, 0), cur: new V3(0, -50, 0), vel: new V3(), yaw: 0, pitch: 0, agachado: false, boneco: null, alvo: null, hp: 100, ia: {} };
         j.alvo = criarAlvo(j); mp.jogadores.set(id, j);
       }
@@ -2020,13 +2024,26 @@
       const ia = b.ia;
       ia.pensarT -= dt;
       if (ia.pensarT <= 0) {
-        ia.pensarT = 0.35 + Math.random() * 0.2; ia.alvo = null; ia.visto = false; let melhor = 1e9;
-        for (const j of mp.jogadores.values()) { if (!j.vivo || j.time === b.time) continue; const d = posDe(j).distanceTo(b.pos); if (d < melhor) { melhor = d; ia.alvo = j; } }
+        ia.pensarT = cfg.reflexo * (0.8 + Math.random() * 0.4);
+        const olho = new V3(b.pos.x, b.pos.y + 1.55, b.pos.z), ve = j => { const p = posDe(j); try { return p.distanceTo(b.pos) < BOTS.visao && G.physics.lineOfSight(olho, new V3(p.x, p.y + 1.2, p.z)); } catch { return false; } };
+        // fica no mesmo alvo até ele cair; só troca se o perdeu de vista há um tempo e há outro inimigo à vista, ou outro bem mais perto
+        if (ia.alvo && (!ia.alvo.vivo || !mp.jogadores.has(ia.alvo.id))) ia.alvo = null;
+        ia.visto = !!ia.alvo && ve(ia.alvo);
+        ia.semVerT = ia.visto ? 0 : (ia.semVerT || 0) + ia.pensarT;
+        let perto = null, dPerto = 1e9, aVista = null, dVista = 1e9;
+        for (const j of mp.jogadores.values()) {
+          if (!j.vivo || j.time === b.time) continue;
+          const d = posDe(j).distanceTo(b.pos);
+          if (d < dPerto) { dPerto = d; perto = j; }
+          if (d < dVista && j !== ia.alvo && ve(j)) { dVista = d; aVista = j; }
+        }
+        const dAlvo = ia.alvo ? posDe(ia.alvo).distanceTo(b.pos) : 1e9;
+        if (!ia.alvo) { ia.alvo = aVista || perto; ia.caminho = null; ia.semVerT = 0; ia.visto = !!ia.alvo && ia.alvo === aVista; }
+        else if (aVista && ((!ia.visto && ia.semVerT > 3) || dVista < dAlvo * 0.5)) { ia.alvo = aVista; ia.caminho = null; ia.semVerT = 0; ia.visto = true; }
         if (ia.alvo) {
-          const p = posDe(ia.alvo); ia.dist = melhor;
-          if (melhor < BOTS.visao) try { ia.visto = G.physics.lineOfSight(new V3(b.pos.x, b.pos.y + 1.55, b.pos.z), new V3(p.x, p.y + 1.2, p.z)); } catch {}
-          if (ia.visto && melhor < 16) ia.caminho = null;
-          else if ((ia.caminhoT -= 0.45) <= 0 || !ia.caminho) { ia.caminhoT = 1.6; try { ia.caminho = G.physics.nav.findPath(b.pos, new V3(p.x, 0, p.z)); } catch { ia.caminho = null; } }
+          const p = posDe(ia.alvo); ia.dist = p.distanceTo(b.pos);
+          if (ia.visto && ia.dist < 9) ia.caminho = null;                    // perto e à vista: para de avançar e luta
+          else if ((ia.caminhoT -= ia.pensarT) <= 0 || !ia.caminho || !ia.caminho.length) { ia.caminhoT = 1.2; try { ia.caminho = G.physics.nav.findPath(b.pos, new V3(p.x, 0, p.z)); } catch { ia.caminho = null; } }
         }
       }
       let wx = 0, wz = 0;
@@ -2039,7 +2056,7 @@
         const p = posDe(ia.alvo), dx = p.x - b.pos.x, dz = p.z - b.pos.z, d = Math.hypot(dx, dz) || 1;
         wx = -dz / d * ia.lado * 0.55; wz = dx / d * ia.lado * 0.55;
       }
-      b.vel.x = wx * BOTS.vel; b.vel.z = wz * BOTS.vel; b.vel.y -= 20 * dt;
+      b.vel.x = wx * cfg.vel; b.vel.z = wz * cfg.vel; b.vel.y -= 20 * dt;
       let res = null; try { res = G.physics.moveCapsule(b.pos, b.vel, dt, 0.3, 1.7, b.noChao); } catch {}
       b.noChao = !res || !!res.onGround;
       if (b.noChao && b.vel.y < 0) b.vel.y = 0;
