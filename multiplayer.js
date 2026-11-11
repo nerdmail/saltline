@@ -2215,6 +2215,39 @@
       }
       return rp(c, r);
     };
+    fundir(g);
+  }
+  // DESEMPENHO: o cenário feito aqui é montado de centenas de caixinhas. Desenhar cada uma em separado pesa muito (eram mais de
+  // 1.800 peças, contra 125 do mapa original). Esta função junta todas as peças de um grupo que usam o mesmo material numa
+  // malha só; o desenho fica igual e o número de peças cai para o número de materiais.
+  function fundir(g) {
+    const T = G.THREE, porMat = new Map();
+    for (const o of [...g.children]) {
+      if (!o.isMesh || !o.geometry || !o.geometry.attributes.position || !o.geometry.attributes.normal || !o.geometry.attributes.uv || Array.isArray(o.material)) continue;
+      o.updateMatrix();
+      let l = porMat.get(o.material); if (!l) porMat.set(o.material, l = []);
+      l.push(o); g.remove(o);
+    }
+    for (const [mat, lista] of porMat) {
+      let nv = 0, ni = 0;
+      for (const o of lista) { nv += o.geometry.attributes.position.count; ni += o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count; }
+      const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), uv = new Float32Array(nv * 2), idx = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni), v = new V3(), nm = new T.Matrix3();
+      let pv = 0, pi = 0;
+      for (const o of lista) {
+        const ge = o.geometry, P = ge.attributes.position, N = ge.attributes.normal, U = ge.attributes.uv; nm.getNormalMatrix(o.matrix);
+        for (let k = 0; k < P.count; k++) {
+          v.fromBufferAttribute(P, k).applyMatrix4(o.matrix); pos[(pv + k) * 3] = v.x; pos[(pv + k) * 3 + 1] = v.y; pos[(pv + k) * 3 + 2] = v.z;
+          v.fromBufferAttribute(N, k).applyMatrix3(nm).normalize(); nor[(pv + k) * 3] = v.x; nor[(pv + k) * 3 + 1] = v.y; nor[(pv + k) * 3 + 2] = v.z;
+          uv[(pv + k) * 2] = U.getX(k); uv[(pv + k) * 2 + 1] = U.getY(k);
+        }
+        if (ge.index) for (let k = 0; k < ge.index.count; k++) idx[pi++] = ge.index.getX(k) + pv; else for (let k = 0; k < P.count; k++) idx[pi++] = pv + k;
+        pv += P.count; ge.dispose();
+      }
+      const geo = new T.BufferGeometry();
+      geo.setAttribute("position", new T.BufferAttribute(pos, 3)); geo.setAttribute("normal", new T.BufferAttribute(nor, 3)); geo.setAttribute("uv", new T.BufferAttribute(uv, 2)); geo.setIndex(new T.BufferAttribute(idx, 1));
+      geo.computeBoundingBox(); geo.computeBoundingSphere();
+      const m = new T.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; g.add(m);
+    }
   }
   // grade de caminhos do mapa inteiro (antigo + novo), feita das caixas de colisão na altura de uma pessoa
   let gradeNav = null;
@@ -2384,6 +2417,7 @@
         }
       }
     }
+    fundir(g);
   }
   // containers do pátio com o topo livre ganham uma escada de mão numa das pontas (as mesmas em todo computador,
   // porque saem da colisão do mapa); no máximo 18, a pelo menos 7 m uma da outra
@@ -3278,6 +3312,9 @@
     if (a && !a.faca && mp.recarregando && w.state !== "reloading" && mp.armaRecarga === mp.arma) w.ammo = a.pente;      // terminou de recarregar: pente cheio, sempre
     mp.recarregando = !!a && !a.faca && w.state === "reloading"; mp.armaRecarga = mp.arma;
     if (a && !a.faca && vale && w.ammo <= 0 && w.state !== "reloading" && !mp.trocaPara) { try { w.reloadNow(); } catch {} }      // pente vazio: recarrega sozinho
+    // garantia: se por qualquer motivo a recarga do jogo não começar, em menos de 2 s o pente volta cheio do mesmo jeito
+    mp.secoT = a && !a.faca && vale && w.ammo <= 0 && w.state !== "reloading" && !mp.trocaPara ? (mp.secoT || 0) + dt : 0;
+    if (mp.secoT > 1.8) { w.ammo = a.pente; mp.secoT = 0; tocar("reload_magin"); }
     if (!mp.linhaMunicao) mp.linhaMunicao = document.querySelector(".h-ammo-row");
     if (mp.linhaMunicao) mp.linhaMunicao.style.visibility = a && a.faca ? "hidden" : "";                                         // de faca não há munição para mostrar       // munição infinita: R sempre recarrega
     mp.mirando = !!(a && a.mira && p.alive && G.input.ads);
