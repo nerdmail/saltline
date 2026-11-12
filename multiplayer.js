@@ -655,6 +655,7 @@
       <div class="mp-dif"><span>Rodadas</span>${mp.anfitriao
         ? `<div class="seg">${[3, 4, 5, 7, 10].map(n => `<button data-mp="rod-${n}" aria-pressed="${n === mp.rodadasTotal}">${n}</button>`).join("")}</div>`
         : `<b>${mp.rodadasTotal}</b>`}</div>
+      ${linhaBrilho()}
       <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times${d.maq.dano < 0.6 ? " (fracas: incomodam mais do que matam)" : ""}. Partida de ${mp.rodadasTotal} rodadas: ganha o time que vencer mais.</p>
       <div class="mp-acoes mp-acoes-dicas"><button class="btn small" data-mp="dicas">Ver dicas</button></div>
       <div class="mp-acoes">
@@ -666,6 +667,15 @@
         <button class="btn" data-mp="sair">Sair da sala</button>
       </div>`);
   }
+  // BRILHO: cada um escolhe o seu (fica guardado no navegador); vale nas rodadas do multiplayer
+  function brilho() { let v = 1.55; try { v = parseFloat(localStorage.getItem("pebacity.brilho")) || 1.55; } catch {} return Math.max(0.8, Math.min(2.6, v)); }
+  const linhaBrilho = () => `<div class="mp-dif"><span>Brilho</span><input class="mp-brilho" type="range" min="80" max="260" step="5" value="${Math.round(brilho() * 100)}"><b class="mp-brilho-n">${Math.round(brilho() * 100)}%</b></div>`;
+  document.addEventListener("input", ev => {
+    const el = ev.target; if (!el || !el.classList || !el.classList.contains("mp-brilho")) return;
+    try { localStorage.setItem("pebacity.brilho", String(el.value / 100)); } catch {}
+    const n = el.parentElement.querySelector(".mp-brilho-n"); if (n) n.textContent = el.value + "%";
+    try { if (emRodada()) G.render.exposure = brilho(); } catch {}
+  });
   // abre o painel de ajustes do próprio jogo (qualidade, sensibilidade, volume, campo de visão) por cima da sala ou do menu da partida
   function abrirAjustes(qual) {
     try {
@@ -731,6 +741,7 @@
         <button class="btn" data-mp="ajustes">Ajustes</button>
         <button class="btn" data-mp="controles">Controles</button>
       </div>
+      ${linhaBrilho()}
       <p class="mp-nota">${mp.anfitriao ? "Voltar ao lobby encerra a partida e leva todos para a sala de espera." : "No lobby você fica fora desta rodada e volta a jogar na próxima."} Sair da sala leva à tela inicial, de onde dá para criar outra sala.</p>`);
   }
   window.addEventListener("keydown", ev => {
@@ -3728,7 +3739,7 @@
   const semChuva = () => { try { const g = window.__G; for (const k in g) if (g[k] && typeof g[k].setRain === "function") g[k].setRain(0); } catch {} };
   setInterval(semChuva, 2000);
   // IMAGEM MAIS CLARA nas rodadas do multiplayer (a exposição do jogo original é de fim de tarde, escura)
-  setInterval(() => { try { const r = window.__G && window.__G.render; if (r && typeof r.exposure === "number") r.exposure = emRodada() ? 1.55 : 1; } catch {} }, 500);
+  setInterval(() => { try { const r = window.__G && window.__G.render; if (r && typeof r.exposure === "number") r.exposure = emRodada() ? brilho() : 1; } catch {} }, 300);
   // SOM AMBIENTE. O jogo toca em laço chuva, chuva por dentro, vento e mar (nessa ordem) e depois a música. Não há controle de
   // volume só para eles, então o ajuste é feito na própria gravação, na hora em que cada laço começa a tocar: os dois primeiros
   // (chuva) ficam mudos e os outros ficam bem mais baixos. Tiros e passos não são laços e continuam como estavam.

@@ -128,3 +128,7 @@
 /* menu do Esc e sala de espera: os botões podem quebrar de linha */
 .mp-acoes-menu { flex-wrap: wrap; margin-top: 12px; }
 .mp-acoes { flex-wrap: wrap; }
+
+/* controle de brilho */
+.mp-brilho { flex: 1 1 auto; min-width: 120px; accent-color: var(--signal); cursor: pointer; }
+.mp-brilho-n { min-width: 52px; text-align: right; }
