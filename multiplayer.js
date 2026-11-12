@@ -884,7 +884,9 @@
     mp.assinatura = sig;
     G.hud.setObjective(!t ? "Aguarde a próxima rodada" : mp.resgateVisto ? "Leve os reféns: " + mp.resgateNome : TIMES[t].objetivo);
     G.hud.setRelays(mp.refens.filter(r => r.estado === 2).length, mp.refens.length);
-    const marcas = mp.refens.filter(r => r.estado < 2).map(r => ({ id: "refem" + r.i, short: "R" + (r.i + 1), label: "Refém", pos: r.cur, kind: "relay" }));
+    // Policiais veem os reféns o tempo todo. Terroristas só enquanto estão presos na casinha: depois de solto, o marcador
+    // entregaria onde está o policial que o leva.
+    const marcas = mp.refens.filter(r => t === "p" ? r.estado < 2 : r.estado === 0).map(r => ({ id: "refem" + r.i, short: "R" + (r.i + 1), label: "Refém", pos: r.cur, kind: "relay" }));
     if (mp.resgateVisto) marcas.push({ id: "resgate", short: "EX", label: "Resgate", pos: mp.resgateVisto, kind: "extract" });
     G.hud.setMarkers(marcas);
   }
@@ -3528,7 +3530,12 @@
     if (!mapaFundo || mapaFundo.rodada !== mp.rodada) { mapaFundo = fundoDoMapa(); mapaFundo.rodada = mp.rodada; mapaEl.width = mapaFundo.width; mapaEl.height = mapaFundo.height; }
     const c = mapaEl.getContext("2d"), esc = MAPA.larg / (MAPA.x1 - MAPA.x0), X = x => (x - MAPA.x0) * esc, Z = z => (z - MAPA.z0) * esc;
     c.clearRect(0, 0, mapaEl.width, mapaEl.height); c.drawImage(mapaFundo, 0, 0);
-    if (j.time === "p" && mp.resgateVisto) { const r = mp.resgateVisto; c.strokeStyle = "#ffd27a"; c.lineWidth = 2; c.beginPath(); c.arc(X(r.x), Z(r.z), RAIO_RESGATE * esc, 0, 6.3); c.stroke(); }
+    if (j.time === "p" && mp.resgateVisto) {              // onde deixar os reféns: círculo cheio, piscando, com o nome
+      const r = mp.resgateVisto, pulso = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+      c.fillStyle = "rgba(255,210,122," + (0.25 + 0.3 * pulso).toFixed(2) + ")"; c.strokeStyle = "#ffd27a"; c.lineWidth = 2;
+      c.beginPath(); c.arc(X(r.x), Z(r.z), Math.max(6, RAIO_RESGATE * esc), 0, 6.3); c.fill(); c.stroke();
+      c.fillStyle = "#ffd27a"; c.font = "700 9px sans-serif"; c.textAlign = "center"; c.fillText("RESGATE", Math.max(24, Math.min(mapaEl.width - 24, X(r.x))), Z(r.z) + (Z(r.z) > mapaEl.height - 22 ? -12 : 20));
+    }
     if (j.time === "p") for (const r of mp.refens) if (r.estado < 2) { c.fillStyle = "#f08a00"; c.fillRect(X(r.cur.x) - 2.5, Z(r.cur.z) - 2.5, 5, 5); }
     c.font = "600 9px sans-serif"; c.textAlign = "center";
     for (const o of mp.jogadores.values()) {
