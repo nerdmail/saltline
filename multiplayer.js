@@ -935,7 +935,7 @@
     try { G.weapon.name = nomeArmaOriginal; aplicarModelo(null); animarFaca(0, false); } catch {}
     for (const j of mp.jogadores.values()) if (j.boneco) j.boneco.grupo.visible = false;
     for (const r of mp.refens) r.boneco.grupo.visible = false;
-    placarEl.hidden = true; vidaEl.hidden = true; tabEl.hidden = true; if (mapaEl) mapaEl.hidden = true;
+    placarEl.hidden = true; vidaEl.hidden = true; tabEl.hidden = true; if (mapaEl) mapaEl.hidden = true; if (tempoEl) tempoEl.hidden = true;
     { const ve = document.getElementById("versao"); if (ve) ve.hidden = false; }
   }
   // objetivo, contador e marcadores do HUD; refaz só quando a situação dos reféns muda
@@ -3681,6 +3681,15 @@
     c.save(); c.translate(X(p.pos.x), Z(p.pos.z)); c.rotate(-yaw); c.fillStyle = "#ffffff"; c.strokeStyle = "#0b0d0f"; c.lineWidth = 1;
     c.beginPath(); c.moveTo(0, -7); c.lineTo(4.5, 5); c.lineTo(0, 2.5); c.lineTo(-4.5, 5); c.closePath(); c.fill(); c.stroke(); c.restore();
   }
+  // RELÓGIO da rodada, grande, no alto e no meio da tela (fica vermelho e pisca nos últimos 30 segundos)
+  let tempoEl = null, tempoTxt = "";
+  function desenharTempo() {
+    if (!tempoEl) return;
+    const mostra = emRodada() && (mp.fase === "valendo" || mp.fase === "preparo");
+    tempoEl.hidden = !mostra; if (!mostra) return;
+    const t = Math.max(0, Math.ceil(mp.tempo)), txt = mp.fase === "preparo" ? "PREPARAR" : Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+    if (txt !== tempoTxt) { tempoTxt = txt; tempoEl.textContent = txt; tempoEl.classList.toggle("fim", mp.fase === "valendo" && t <= 30); }
+  }
   let vidaEl = null, tabEl = null;
   function desenharVida() {
     const p = G.player, v = p.alive ? Math.max(0, Math.round(p.health)) : 0, max = p.maxHealth || 100;
@@ -3747,7 +3756,7 @@
       }
       mp.placarT -= dt;
       if (mp.placarT <= 0) { mp.placarT = 0.25; desenharPlacar(); if (!tabEl.hidden) desenharTab(); }
-      desenharVida(); desenharMapa(dt);
+      desenharVida(); desenharMapa(dt); desenharTempo();
       return true;
     },
   };
@@ -3780,6 +3789,7 @@
       }
       return r;
     };
+    tempoEl = document.createElement("div"); tempoEl.className = "mp-tempo"; tempoEl.hidden = true; document.getElementById("app").appendChild(tempoEl);
     mapaEl = document.createElement("canvas"); mapaEl.className = "mp-mapa"; mapaEl.hidden = true; document.getElementById("app").appendChild(mapaEl);
     vidaEl = document.createElement("div"); vidaEl.className = "mp-vida"; vidaEl.hidden = true; document.getElementById("app").appendChild(vidaEl);
     tabEl = document.createElement("div"); tabEl.className = "mp-tab"; tabEl.hidden = true; document.getElementById("app").appendChild(tabEl);

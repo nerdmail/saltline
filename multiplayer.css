@@ -132,3 +132,10 @@
 /* controle de brilho */
 .mp-brilho { flex: 1 1 auto; min-width: 120px; accent-color: var(--signal); cursor: pointer; }
 .mp-brilho-n { min-width: 52px; text-align: right; }
+
+/* relógio da rodada, no alto e no meio */
+.mp-tempo { position: absolute; z-index: 29; left: 50%; transform: translateX(-50%); top: calc(52px + env(safe-area-inset-top, 0px)); padding: 4px 16px 2px; background: rgba(11, 13, 15, .6); border-bottom: 3px solid var(--signal); font: 800 40px/1 var(--f-display); letter-spacing: .06em; color: var(--bone); pointer-events: none; }
+.mp-tempo[hidden] { display: none; }
+.mp-tempo.fim { color: #ff4a3d; border-bottom-color: #ff4a3d; animation: mp-pisca 1s steps(2, start) infinite; }
+@keyframes mp-pisca { to { opacity: .55; } }
+@media (max-height: 560px) { .mp-tempo { font-size: 28px; top: calc(40px + env(safe-area-inset-top, 0px)); } }
