@@ -706,6 +706,11 @@
     else if (a === "comecar") { mp.resultado = null; mp.placar = { p: 0, t: 0 }; mp.rodada = 0; novaRodada(); }
     else if (a === "nome") { await pedirPerfil(true); location.reload(); }
     else if (a === "voltar") menuDaPartida(false);
+    else if (a === "reiniciar" && mp.anfitriao && emRodada()) {      // anfitrião: zera a rodada atual para todos, mantendo o placar
+      menuDaPartida(false);
+      paraTodos({ t: "feed", html: "<b>O anfitrião reiniciou a rodada</b>" });
+      mp.rodada = Math.max(0, mp.rodada - 1); novaRodada();
+    }
     else if (a === "ajustes") abrirAjustes("settings");
     else if (a === "controles") abrirAjustes("controls");
     else if (a === "lobby") {
@@ -744,7 +749,9 @@
       <div class="mp-acoes mp-acoes-menu">
         <button class="btn" data-mp="ajustes">Ajustes</button>
         <button class="btn" data-mp="controles">Controles</button>
+        ${mp.anfitriao ? `<button class="btn" data-mp="reiniciar">Reiniciar rodada</button>` : ""}
       </div>
+      ${mp.anfitriao ? `<p class="mp-nota">Reiniciar rodada derruba todo mundo e começa a rodada de novo, sem mexer no placar.</p>` : ""}
       ${linhaBrilho()}
       <p class="mp-nota">${mp.anfitriao ? "Voltar ao lobby encerra a partida e leva todos para a sala de espera." : "No lobby você fica fora desta rodada e volta a jogar na próxima."} Sair da sala leva à tela inicial, de onde dá para criar outra sala.</p>`);
   }
