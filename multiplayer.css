@@ -150,3 +150,10 @@
 .mp-centro.matou { border-top-color: #7bd88f; } .mp-centro.matou b { color: #7bd88f; }
 .mp-centro.morreu { border-top-color: #ff4a3d; } .mp-centro.morreu b { color: #ff4a3d; }
 @media (max-height: 560px) { .mp-centro b { font-size: 36px; } }
+
+/* contador de FPS, à esquerda */
+.mp-fps { position: absolute; z-index: 29; left: max(16px, env(safe-area-inset-left, 0px)); top: calc(96px + env(safe-area-inset-top, 0px)); padding: 4px 9px; background: rgba(11, 13, 15, .6); font: 700 15px/1 var(--f-mono); letter-spacing: .06em; color: var(--bone); pointer-events: none; }
+.mp-fps[hidden] { display: none; }
+.mp-fps.bom { color: #7bd88f; } .mp-fps.medio { color: #ffd27a; } .mp-fps.ruim { color: #ff4a3d; }
+.mp-carga { color: var(--signal); }
+.btn[disabled] { opacity: .55; cursor: default; }

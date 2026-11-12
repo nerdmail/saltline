@@ -612,6 +612,49 @@
     esconderMenuSolo();
     if (mp.anfitriao) mandarLobby(); else desenharLobby();
   }
+  // CARREGAMENTO NA SALA DE ESPERA. O que antes era montado no começo da primeira rodada (e por isso ela travava) é feito aqui,
+  // um passo a cada 120 ms, enquanto as pessoas entram: os bots, a sala dos reféns com o duto, o guindaste e o pátio novo, a
+  // grade de caminhos, os desenhos das pichações, o boneco de cada jogador e a preparação das texturas e dos materiais na
+  // placa de vídeo. "Começar partida" só libera quando termina (ou depois de 30 s, se algum passo falhar).
+  const CARGA = { passo: 0, feito: false, pct: 0, inicio: 0, comp: 0 };
+  function carregarNaSala() {
+    if (CARGA.feito || !mp.ativo || mp.fase !== "lobby" || !G) return;
+    if (!CARGA.inicio) CARGA.inicio = performance.now();
+    const passou = performance.now() - CARGA.inicio;
+    if (passou > 30000) { CARGA.feito = true; CARGA.pct = 100; return mostrarCarga(); }
+    if (!soldado && passou < 12000) return;               // espera os modelos chegarem
+    try {
+      const n = CARGA.passo;
+      if (n === 0) { if (mp.anfitriao) { completarComBots(); mandarLobby(); } }
+      else if (n === 1) prepararSala();
+      else if (n === 2) gradeExtra();
+      else if (n >= 3 && n <= 8) artePicho(n - 3);
+      else {
+        const falta = [...mp.jogadores.values()].find(j => j.id !== mp.meuId && j.time && !j.boneco);
+        if (falta && n < 40) {                             // um boneco por passo
+          falta.boneco = criarBoneco({ nome: falta.nome, css: TIMES[falta.time].css, armado: true, time: falta.time }); falta.boneco.time = falta.time; falta.boneco.nome = falta.nome;
+          armarBoneco(falta.boneco, falta.time + "_fuzil");
+        } else {                                           // por fim: tudo à vista por alguns quadros, atrás da tela da sala, para a placa de vídeo preparar
+          const cam = G.camera, frente = new V3(0, 0, -1).applyQuaternion(cam.quaternion), bonecos = [...mp.jogadores.values()].filter(j => j.boneco).map(j => j.boneco);
+          if (!CARGA.comp) {
+            cenario.visible = true;
+            bonecos.forEach((b, k) => { b.grupo.position.copy(cam.position).addScaledVector(frente, 7 + k * 0.6); b.grupo.position.y -= 1.6; b.grupo.visible = true; });
+            try { const r = G.renderer || (G.render && G.render.renderer); if (r && r.compile) r.compile(G.scene, cam); } catch {}
+          }
+          if (++CARGA.comp > 8) { cenario.visible = false; for (const b of bonecos) b.grupo.visible = false; CARGA.feito = true; }
+          CARGA.pct = Math.min(100, 90 + CARGA.comp); return mostrarCarga();
+        }
+      }
+    } catch (e) { console.warn("[mp] carregamento na sala, passo " + CARGA.passo, e); }
+    CARGA.passo++; CARGA.pct = Math.min(90, Math.round(CARGA.passo / 20 * 90)); mostrarCarga();
+  }
+  function mostrarCarga() {
+    if (!tela || tela.hidden) return;
+    const el = tela.querySelector(".mp-carga"), b = tela.querySelector('[data-mp="comecar"]');
+    if (el) el.textContent = CARGA.feito ? "Jogo carregado: a primeira rodada já começa leve." : "Carregando o jogo… " + CARGA.pct + "%";
+    if (b) { b.disabled = !CARGA.feito; b.textContent = CARGA.feito ? "Começar partida" : "Carregando… " + CARGA.pct + "%"; }
+  }
+  setInterval(carregarNaSala, 120);
   function linkDaSala() { return location.origin + location.pathname + "?sala=" + mp.codigo; }
   // as dicas abrem numa janela por cima da sala de espera (clicar fora, no botão ou apertar Esc fecha)
   const DICAS = `<ul class="mp-regras">
@@ -676,9 +719,10 @@
         : `<b>${mp.rodadasTotal}</b>`}</div>
       ${linhaBrilho()}
       <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times${d.maq.dano < 0.6 ? " (fracas: incomodam mais do que matam)" : ""}. Partida de ${mp.rodadasTotal} rodadas: ganha o time que vencer mais.</p>
+      <p class="mp-nota mp-carga">${CARGA.feito ? "Jogo carregado: a primeira rodada já começa leve." : "Carregando o jogo… " + CARGA.pct + "%"}</p>
       <div class="mp-acoes mp-acoes-dicas"><button class="btn small" data-mp="dicas">Ver dicas</button></div>
       <div class="mp-acoes">
-        ${mp.anfitriao ? `<button class="btn primary" data-mp="comecar">Começar partida</button>`
+        ${mp.anfitriao ? `<button class="btn primary" data-mp="comecar" ${CARGA.feito ? "" : "disabled"}>${CARGA.feito ? "Começar partida" : "Carregando… " + CARGA.pct + "%"}</button>`
           : `<span class="mp-espera">${emAndamento ? "Partida em andamento — você entra na próxima rodada" : "Aguardando o anfitrião começar"}</span>`}
         <button class="btn" data-mp="ajustes">Ajustes</button>
         <button class="btn" data-mp="controles">Controles</button>
@@ -718,7 +762,7 @@
     else if (a.startsWith("time-")) enviar({ t: "time", time: a.slice(5) });
     else if (a.startsWith("dif-") && mp.anfitriao) { mp.dificuldade = a.slice(4); mandarLobby(); }
     else if (a.startsWith("rod-") && mp.anfitriao) { mp.rodadasTotal = +a.slice(4) || 5; mandarLobby(); }
-    else if (a === "comecar") { mp.resultado = null; mp.placar = { p: 0, t: 0 }; mp.rodada = 0; novaRodada(); }
+    else if (a === "comecar") { if (!CARGA.feito) return; mp.resultado = null; mp.placar = { p: 0, t: 0 }; mp.rodada = 0; novaRodada(); }
     else if (a === "nome") { await pedirPerfil(true); location.reload(); }
     else if (a === "voltar") menuDaPartida(false);
     else if (a === "telacheia") {                          // sai da tela cheia só enquanto o menu está aberto (para trocar de aba, recarregar...)
@@ -951,7 +995,7 @@
     try { G.weapon.name = nomeArmaOriginal; aplicarModelo(null); animarFaca(0, false); } catch {}
     for (const j of mp.jogadores.values()) if (j.boneco) j.boneco.grupo.visible = false;
     for (const r of mp.refens) r.boneco.grupo.visible = false;
-    placarEl.hidden = true; vidaEl.hidden = true; tabEl.hidden = true; if (mapaEl) mapaEl.hidden = true; if (tempoEl) tempoEl.hidden = true;
+    placarEl.hidden = true; vidaEl.hidden = true; tabEl.hidden = true; if (mapaEl) mapaEl.hidden = true; if (tempoEl) tempoEl.hidden = true; if (fpsEl) fpsEl.hidden = true;
     { const ve = document.getElementById("versao"); if (ve) ve.hidden = false; }
   }
   // objetivo, contador e marcadores do HUD; refaz só quando a situação dos reféns muda
@@ -1516,6 +1560,8 @@
       } else j.quedaY = null;
       const b = j.boneco, a = ARMAS[j.arma], v = VARIANTES[j.arma];
       b.grupo.visible = j.pos.y > -40 && !(noDuto(j.cur) && !vejoDuto);      // quem está dentro do duto não aparece para quem está fora
+      { const perto = j.cur.distanceToSquared(G.player.pos) < 625;      // sombra só de quem está a menos de 25 m
+        if (b.sombra !== perto) { b.sombra = perto; b.grupo.traverse(o => { if (o.isMesh) o.castShadow = perto; }); } }
       armarBoneco(b, j.vivo ? j.arma : null);
       b.colete.visible = !!(j.armadura & 1); b.capacete.visible = !!(j.armadura & 2); b.bone.visible = !b.capacete.visible;
       j.deitado = noDuto(j.cur) || !!j.noChao;
@@ -3714,6 +3760,15 @@
     const t = Math.max(0, Math.ceil(mp.tempo)), txt = mp.fase === "preparo" ? "PREPARAR" : Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
     if (txt !== tempoTxt) { tempoTxt = txt; tempoEl.textContent = txt; tempoEl.classList.toggle("fim", mp.fase === "valendo" && t <= 30); }
   }
+  // FPS (quadros por segundo), à esquerda: verde acima de 50, amarelo acima de 30, vermelho abaixo
+  let fpsEl = null, fpsN = 0, fpsT = 0;
+  function desenharFps(dt) {
+    if (!fpsEl) return;
+    fpsEl.hidden = !emRodada(); fpsN++; fpsT += dt;
+    if (fpsT < 0.5) return;
+    const f = Math.round(fpsN / fpsT); fpsN = 0; fpsT = 0;
+    fpsEl.textContent = f + " FPS"; fpsEl.className = "mp-fps " + (f >= 50 ? "bom" : f >= 30 ? "medio" : "ruim");
+  }
   let vidaEl = null, tabEl = null;
   function desenharVida() {
     const p = G.player, v = p.alive ? Math.max(0, Math.round(p.health)) : 0, max = p.maxHealth || 100;
@@ -3780,7 +3835,7 @@
       }
       mp.placarT -= dt;
       if (mp.placarT <= 0) { mp.placarT = 0.25; desenharPlacar(); if (!tabEl.hidden) desenharTab(); }
-      desenharVida(); desenharMapa(dt); desenharTempo();
+      desenharVida(); desenharMapa(dt); desenharTempo(); desenharFps(dt);
       return true;
     },
   };
@@ -3813,6 +3868,7 @@
       }
       return r;
     };
+    fpsEl = document.createElement("div"); fpsEl.className = "mp-fps"; fpsEl.hidden = true; document.getElementById("app").appendChild(fpsEl);
     tempoEl = document.createElement("div"); tempoEl.className = "mp-tempo"; tempoEl.hidden = true; document.getElementById("app").appendChild(tempoEl);
     mapaEl = document.createElement("canvas"); mapaEl.className = "mp-mapa"; mapaEl.hidden = true; document.getElementById("app").appendChild(mapaEl);
     vidaEl = document.createElement("div"); vidaEl.className = "mp-vida"; vidaEl.hidden = true; document.getElementById("app").appendChild(vidaEl);
