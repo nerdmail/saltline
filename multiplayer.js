@@ -433,7 +433,10 @@
         sincronizarMarionetes(m.m);
         if (m.k && mp.carro.oc[0] !== mp.meuId) { mp.carro.alvo = new V3(m.k[0], 0, m.k[1]); mp.carro.alvoYaw = m.k[2]; }
         break;
-      case "resgateSuper": mp.resgateSuper = new V3(m.p[0], 0, m.p[1]); break;
+      case "resgateSuper":                       // super poder: o ponto de resgate aparece no jogo (seta no céu, facho, marcador) como para os Policiais
+        mp.resgateSuper = new V3(m.p[0], 0, m.p[1]); mp.assinatura = "";
+        discoResgate.position.copy(mp.resgateSuper); discoResgate.visible = true;
+        break;
       case "carro": mp.carro.oc = m.oc; break;
       case "tiro": tiroRemoto(m); break;
       case "resgate":
@@ -940,7 +943,7 @@
   }
   // objetivo, contador e marcadores do HUD; refaz só quando a situação dos reféns muda
   function atualizarObjetivo() {
-    const t = eu() && eu().time, sig = t + mp.refens.map(r => r.estado).join("") + (mp.resgateVisto ? mp.resgateNome : "");
+    const t = eu() && eu().time, sig = t + mp.refens.map(r => r.estado).join("") + (mp.resgateVisto ? mp.resgateNome : "") + (mp.resgateSuper ? "S" : "");
     if (sig === mp.assinatura) return;
     mp.assinatura = sig;
     G.hud.setObjective(!t ? "Aguarde a próxima rodada" : mp.resgateVisto ? "Leve os reféns: " + mp.resgateNome : TIMES[t].objetivo);
@@ -948,7 +951,7 @@
     // Policiais veem os reféns o tempo todo. Terroristas só enquanto estão presos na casinha: depois de solto, o marcador
     // entregaria onde está o policial que o leva.
     const marcas = mp.refens.filter(r => t === "p" ? r.estado < 2 : r.estado === 0).map(r => ({ id: "refem" + r.i, short: "R" + (r.i + 1), label: "Refém", pos: r.cur, kind: "relay" }));
-    if (mp.resgateVisto) marcas.push({ id: "resgate", short: "EX", label: "Resgate", pos: mp.resgateVisto, kind: "extract" });
+    if (mp.resgateVisto || mp.resgateSuper) marcas.push({ id: "resgate", short: "EX", label: "Resgate", pos: mp.resgateVisto || mp.resgateSuper, kind: "extract" });
     G.hud.setMarkers(marcas);
   }
 
