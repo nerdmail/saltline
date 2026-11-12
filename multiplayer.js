@@ -222,12 +222,15 @@
 
   async function criarSala() {
     const nome = await pedirPerfil();
-    const codigo = Array.from(crypto.getRandomValues(new Uint8Array(10)), b => "abcdefghjkmnpqrstuvwxyz23456789"[b % 31]).join("");
+    // o link da sala é sempre o mesmo para quem a cria: o código fica guardado neste navegador e é reaproveitado
+    let codigo = null; try { codigo = localStorage.getItem("pebacity.sala"); } catch {}
+    if (!codigo || !/^[a-z0-9]{6,20}$/.test(codigo)) codigo = Array.from(crypto.getRandomValues(new Uint8Array(10)), b => "abcdefghjkmnpqrstuvwxyz23456789"[b % 31]).join("");
+    try { localStorage.setItem("pebacity.sala", codigo); } catch {}
     try { sessionStorage.setItem("saltline.anfitriao", codigo); } catch {}
     history.replaceState(null, "", location.pathname + "?sala=" + codigo);
     await abrirComoAnfitriao(codigo, nome);
   }
-  async function abrirComoAnfitriao(codigo, nome) {
+  async function abrirComoAnfitriao(codigo, nome, tentativa = 0) {
     aviso("Abrindo a sala…");
     try { await carregarPeer(); } catch (e) { return aviso(e.message, true); }
     const peer = new window.Peer(CFG.prefixo + codigo);
@@ -247,7 +250,11 @@
       con.on("error", () => saiu(con.peer));
     });
     peer.on("error", e => {
-      if (e.type === "unavailable-id") aviso("Esta sala já está aberta em outra aba ou aparelho.", true);
+      if (e.type === "unavailable-id") {                  // logo depois de fechar a aba, o endereço ainda fica ocupado por alguns segundos: tenta de novo
+        try { peer.destroy(); } catch {}
+        if (tentativa < 8 && !mp.ativo) { aviso("Abrindo a sala… (a anterior ainda está fechando)"); setTimeout(() => abrirComoAnfitriao(codigo, nome, tentativa + 1), 2500); }
+        else aviso("Esta sala já está aberta em outra aba ou aparelho.", true);
+      }
       else if (!mp.ativo) aviso("Não deu para abrir a sala (" + e.type + ").", true);
     });
   }
@@ -621,7 +628,7 @@
         <li><b>Bots</b> Quando a partida começa, cada time é completado com bots até ficar com 5 (no máximo 10 na partida). O nome deles começa com "Bot". Eles só combatem, não mexem nos reféns, e ficam mais difíceis conforme a dificuldade da sala.</li>
         <li><b>Quem cai</b> Fica assistindo um jogador vivo até a rodada acabar. A barra de espaço troca de jogador.</li>
         <li><b>Placar</b> Segure Tab para ver quem está vivo, os abates e as vitórias de cada time.</li>
-        <li><b>Teclas</b> C corre (correndo não atira) · Ctrl ou X agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q troca de arma (1 arma, 2 pistola, 3 faca) · 4 granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
+        <li><b>Teclas</b> C corre (correndo não atira) · Shift ou X agacha (Shift+W anda agachado) · Z deita e rasteja · E abre porta e solta refém · P picha · Q troca de arma (1 arma, 2 pistola, 3 faca) · 4 granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
         <li><b>Reféns</b> Seguem você a um passo e meio: correm, pulam, abaixam e deitam junto. No ponto de resgate, comemoram.</li>
         <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura um tiro no tronco e some; o capacete segura um tiro na cabeça e some.</li>
         <li><b>Mira</b> No fácil e no médio a mira ajuda: tiro que passa raspando o inimigo ou a máquina acerta.</li>
@@ -2574,7 +2581,8 @@
     if (mp.carro.oc.indexOf(mp.meuId) >= 0) { inp.crouch = true; inp.sprint = false; mp.naEscada = null; mp.deitado = false; mp.deitarManual = false; mp.quedaTopo = p.pos.y; return; }      // sentado no carro
     if (mp.deitarManual && (mp.correr || mp.naEscada || inp.pressed("jump"))) mp.deitarManual = false;      // correr, pular ou pegar escada levanta
     const noTubo = noDuto(p.pos), deitar = noTubo || mp.deitarManual;
-    inp.crouch = mp.ctrl || deitar;                      // no multiplayer o C corre; agachar fica no Ctrl
+    inp.crouch = mp.ctrl || deitar;                      // no multiplayer o C corre; agachar fica no Shift (ou no X). O Ctrl não é usado: Ctrl+W fecha a aba
+    if (!mp.correr) inp.sprint = false;                  // o Shift do jogo original corria; aqui ele só agacha
     if (deitar) inp.sprint = false; else if (mp.correr) inp.sprint = true;
     t.crouch = noTubo ? 2.3 : deitar ? 1.5 : 1.9;                        // rastejando (para o jogo é agachado, com a câmera baixa; os outros veem a pessoa deitada)
     mp.deitado = deitar;
@@ -2634,8 +2642,8 @@
   window.addEventListener("keydown", ev => {      // Z deita e levanta (no duto é automático)
     if (ev.code === "KeyZ" && !ev.repeat && emRodada() && G.player.alive && !(tela && !tela.hidden)) { mp.deitarManual = !mp.deitarManual; G.hud.message(mp.deitarManual ? "Deitado · Z levanta" : "De pé", 1.2); }
   });
-  window.addEventListener("keydown", ev => { if (ev.code === "KeyC") mp.correr = true; else if (ev.code === "ControlLeft" || ev.code === "ControlRight" || ev.code === "KeyX") mp.ctrl = true; });
-  window.addEventListener("keyup", ev => { if (ev.code === "KeyC") mp.correr = false; else if (ev.code === "ControlLeft" || ev.code === "ControlRight" || ev.code === "KeyX") mp.ctrl = false; });
+  window.addEventListener("keydown", ev => { if (ev.code === "KeyC") mp.correr = true; else if (ev.code === "ShiftLeft" || ev.code === "ShiftRight" || ev.code === "KeyX") mp.ctrl = true; });
+  window.addEventListener("keyup", ev => { if (ev.code === "KeyC") mp.correr = false; else if (ev.code === "ShiftLeft" || ev.code === "ShiftRight" || ev.code === "KeyX") mp.ctrl = false; });
   // Ctrl+W (agachar e andar) é o atalho do navegador para fechar a aba. Três defesas: em tela cheia o teclado fica preso para o jogo
   // (Chrome e Edge); os atalhos com Ctrl que o navegador deixa bloquear são bloqueados; e, se mesmo assim a aba for fechar no
   // meio de uma rodada, o navegador pergunta antes. O X também agacha, para quem não quiser usar o Ctrl.
@@ -3784,7 +3792,8 @@
     const codigo = new URLSearchParams(location.search).get("sala");
     if (codigo && /^[a-z0-9]{6,20}$/.test(codigo)) {
       let era = null; try { era = sessionStorage.getItem("saltline.anfitriao"); } catch {}
-      if (era === codigo) pedirPerfil().then(nome => abrirComoAnfitriao(codigo, nome));   // o anfitrião recarregou a página
+      let minha = null; try { minha = localStorage.getItem("pebacity.sala"); } catch {}
+      if (era === codigo || minha === codigo) pedirPerfil().then(nome => abrirComoAnfitriao(codigo, nome));   // o anfitrião recarregou a página
       else entrarNaSala(codigo);
     }
     const versaoEl = document.getElementById("versao");      // a versão some enquanto se joga (solo ou multiplayer)
