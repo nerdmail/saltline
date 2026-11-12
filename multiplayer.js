@@ -721,9 +721,9 @@
     else if (a === "comecar") { mp.resultado = null; mp.placar = { p: 0, t: 0 }; mp.rodada = 0; novaRodada(); }
     else if (a === "nome") { await pedirPerfil(true); location.reload(); }
     else if (a === "voltar") menuDaPartida(false);
-    else if (a === "telacheia") {                          // quem sai da tela cheia por aqui fica em janela até pedir de novo
+    else if (a === "telacheia") {                          // sai da tela cheia só enquanto o menu está aberto (para trocar de aba, recarregar...)
       const cheio = document.fullscreenElement || document.webkitFullscreenElement;
-      mp.semTelaCheia = !!cheio; try { localStorage.setItem("pebacity.janela", cheio ? "1" : ""); } catch {}
+      mp.semTelaCheia = !!cheio;
       if (cheio) { try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch {} } else telaCheia();
       setTimeout(() => { if (mp.menuAberto) menuDaPartida(true); }, 400);      // refaz o menu com o nome certo do botão
     }
@@ -757,7 +757,12 @@
     }, true);
   // MENU DA PARTIDA (Esc): voltar ao jogo, voltar à sala de espera ou sair da sala. A partida não para para os outros.
   function menuDaPartida(abre) {
-    if (!abre) { mp.menuAberto = false; fecharOverlay(); if (emRodada()) try { G.input.requestLock(); } catch {} return; }
+    if (!abre) {                                           // voltou ao jogo: o jogo roda sempre em tela cheia
+      mp.menuAberto = false; fecharOverlay(); mp.semTelaCheia = false;
+      if (emRodada()) try { G.input.requestLock(); } catch {}
+      try { telaCheia(); } catch {}
+      return;
+    }
     mp.menuAberto = true; try { G.input.exitLock(); } catch {}
     overlay(`<div class="mp-k">Partida em andamento</div>
       <h2 class="mp-h">Menu</h2>
@@ -775,6 +780,7 @@
       </div>
       ${mp.anfitriao ? `<p class="mp-nota">Reiniciar rodada derruba todo mundo e começa a rodada de novo, sem mexer no placar.</p>` : ""}
       ${linhaBrilho()}
+      <p class="mp-nota">Sair da tela cheia vale só enquanto este menu está aberto (para trocar de aba ou recarregar). Ao voltar ao jogo, ele entra em tela cheia de novo.</p>
       <p class="mp-nota">${mp.anfitriao ? "Voltar ao lobby encerra a partida e leva todos para a sala de espera." : "No lobby você fica fora desta rodada e volta a jogar na próxima."} Sair da sala leva à tela inicial, de onde dá para criar outra sala.</p>`);
   }
   window.addEventListener("keydown", ev => {
@@ -891,7 +897,7 @@
     mp.pegando = -1; mp.pegarT = 0; mp.passagemT = 0; mp.ultimoDano = null; mp.resultado = null; mp.assinatura = "";
     mp.resgateSuper = null;
     mp.resgateVisto = null; discoResgate.visible = false; painel.visible = false;
-    mp.menuAberto = false; fecharOverlay(); esconderMenuSolo(); if (dicasEl) abrirDicas(false);
+    mp.menuAberto = false; mp.semTelaCheia = false; fecharOverlay(); esconderMenuSolo(); if (dicasEl) abrirDicas(false);
     if (!mp.anfitriao) { try { G.enemies.clear(); } catch {} mp.marionetes.clear(); }
     prepararSala(); aplicarPorta(false);
     zerarRefens(); limparExplosivos(); limparArmas(); porCarro(m.carro);
@@ -3854,7 +3860,7 @@
   document.addEventListener("fullscreenchange", () => { mp.telaMudouEm = performance.now(); try { window.dispatchEvent(new Event("resize")); } catch {} });      // o jogo refaz o tamanho da tela
   // PORTÃO DE ENTRADA: como a tela cheia depende de um clique, o jogo abre com uma tela pedindo esse clique. Ela volta sempre que
   // alguém sai da tela cheia fora de uma rodada (dentro da rodada, o próximo clique já devolve a tela cheia).
-  try { mp.semTelaCheia = localStorage.getItem("pebacity.janela") === "1"; } catch {}
+  try { localStorage.removeItem("pebacity.janela"); } catch {}
   const portao = document.createElement("div"); portao.className = "mp-portao";
   portao.innerHTML = "<div><b>PEBACITY</b><span>Clique para jogar em tela cheia</span></div>";
   const mostrarPortao = () => {
