@@ -1403,6 +1403,7 @@
   }
   function atualizarBonecos(dt) {
     const meuTime = eu() && eu().time, k = 1 - Math.exp(-18 * dt);
+    const vejoDuto = noDuto(G.camera.position) || noDuto(G.player.pos);      // só quem também está no duto vê quem está lá dentro
     for (const j of mp.jogadores.values()) {
       if (j.id === mp.meuId) continue;
       if (j.boneco && (j.boneco.time !== j.time || j.boneco.nome !== j.nome)) removerBoneco(j);
@@ -1414,7 +1415,7 @@
         j.quedaV += 20 * dt; j.quedaY = Math.max(piso, j.quedaY - j.quedaV * dt); j.cur.y = j.quedaY;
       } else j.quedaY = null;
       const b = j.boneco, a = ARMAS[j.arma], v = VARIANTES[j.arma];
-      b.grupo.visible = j.pos.y > -40;
+      b.grupo.visible = j.pos.y > -40 && !(noDuto(j.cur) && !vejoDuto);      // quem está dentro do duto não aparece para quem está fora
       armarBoneco(b, j.vivo ? j.arma : null);
       b.colete.visible = !!(j.armadura & 1); b.capacete.visible = !!(j.armadura & 2); b.bone.visible = !b.capacete.visible;
       j.deitado = noDuto(j.cur) || !!j.noChao;
@@ -1436,7 +1437,7 @@
       r.miraT = (r.miraT || 0) - dt;
       if (r.estado === 1 && r.miraT <= 0 && dx * dx + dz * dz > lim * lim) r.yaw = Math.atan2(-dx, -dz);   // só vira quando anda de verdade
       const festa = r.estado === 2 && r.salvoEm && performance.now() - r.salvoEm < 4500;      // salvo: comemora uns segundos antes de sumir
-      r.boneco.grupo.visible = r.estado !== 2 || !!festa;
+      r.boneco.grupo.visible = (r.estado !== 2 || !!festa) && !(noDuto(r.cur) && !vejoDuto);
       posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: r.estado === 1 && r.post === 1, noAr: r.estado === 1 && Math.abs(r.cur.y - antes.y) > 1.3 * dt && !escadaEm(r.cur, 0.9), pitch: 0, desdeTiro: (performance.now() - (r.tiroVisto || -1e6)) / 1000, pose: festa ? "festa" : r.estado === 1 ? "pistola" : "preso", sentado: r.estado === 0 && !!r.civil.senta && !r.boneco.modelo, ajoelhado: r.estado === 0, deitado: noDuto(r.cur) || (r.estado === 1 && r.post === 2) });
       r.boneco.arma.visible = r.estado === 1;                 // solto pelo policial, já armado
       r.boneco.colete.visible = !!(r.prot & 1) && r.estado !== 3; r.boneco.capacete.visible = !!(r.prot & 2) && r.estado !== 3;
