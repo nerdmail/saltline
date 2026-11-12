@@ -462,10 +462,10 @@
         if (k && k !== v) { k.abates = (k.abates | 0) + 1; k.abatesRodada = (k.abatesRodada | 0) + 1; }
         if (v) {                                  // quem matou quem, grande, com a cor de cada time
           const nome = x => `<b style="color:${TIMES[x.time] ? TIMES[x.time].css : "#e8e4da"}">${esc(x.nome)}</b>`;
-          if (k && k !== v && k.id === mp.meuId) {            // destaque para quem matou, no meio da tela
+          if (k && k !== v && k.id === mp.meuId) {            // destaque no meio da tela, por 2 segundos
             const n = k.abatesRodada | 0;
-            G.hud.warn("Você matou " + v.nome + (n > 1 ? " · " + n + " na rodada" : ""), 2.6); tocar("objective");
-          } else if (v.id === mp.meuId && k && k !== v) G.hud.warn("Você foi morto por " + k.nome, 4);
+            avisoCentral("Você matou", v.nome, n > 1 ? n + " na rodada" : "", "matou"); tocar("objective");
+          } else if (v.id === mp.meuId) avisoCentral(k && k !== v ? "Você foi morto por" : "Você morreu", k && k !== v ? k.nome : m.por === "queda" ? "na queda" : m.por === "refem" ? "por um refém" : "pelas máquinas", "", "morreu");
           avisarBaixa(k && k !== v ? `${nome(k)} <i>matou</i> ${nome(v)}` : m.por === "refem" ? `${nome(v)} <i>foi abatido por um refém</i>` : m.por === "queda" ? `${nome(v)} <i>morreu na queda</i>` : `${nome(v)} <i>caiu para as máquinas</i>`,
             v.id === mp.meuId || (k && k.id === mp.meuId));
         }
@@ -721,6 +721,12 @@
     else if (a === "comecar") { mp.resultado = null; mp.placar = { p: 0, t: 0 }; mp.rodada = 0; novaRodada(); }
     else if (a === "nome") { await pedirPerfil(true); location.reload(); }
     else if (a === "voltar") menuDaPartida(false);
+    else if (a === "telacheia") {                          // quem sai da tela cheia por aqui fica em janela até pedir de novo
+      const cheio = document.fullscreenElement || document.webkitFullscreenElement;
+      mp.semTelaCheia = !!cheio; try { localStorage.setItem("pebacity.janela", cheio ? "1" : ""); } catch {}
+      if (cheio) { try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch {} } else telaCheia();
+      setTimeout(() => { if (mp.menuAberto) menuDaPartida(true); }, 400);      // refaz o menu com o nome certo do botão
+    }
     else if (a === "reiniciar" && mp.anfitriao && emRodada()) {      // anfitrião: zera a rodada atual para todos, mantendo o placar
       menuDaPartida(false);
       paraTodos({ t: "feed", html: "<b>O anfitrião reiniciou a rodada</b>" });
@@ -764,6 +770,7 @@
       <div class="mp-acoes mp-acoes-menu">
         <button class="btn" data-mp="ajustes">Ajustes</button>
         <button class="btn" data-mp="controles">Controles</button>
+        <button class="btn" data-mp="telacheia">${document.fullscreenElement || document.webkitFullscreenElement ? "Sair da tela cheia" : "Entrar em tela cheia"}</button>
         ${mp.anfitriao ? `<button class="btn" data-mp="reiniciar">Reiniciar rodada</button>` : ""}
       </div>
       ${mp.anfitriao ? `<p class="mp-nota">Reiniciar rodada derruba todo mundo e começa a rodada de novo, sem mexer no placar.</p>` : ""}
@@ -1430,6 +1437,14 @@
     const s = new T.Sprite(new T.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, sizeAttenuation: false }));
     s.scale.set(0.17, 0.0425, 1);
     return s;
+  }
+  // aviso grande no meio da tela (quem você matou, ou quem matou você): fica 2 segundos
+  let centroEl = null, centroT = 0;
+  function avisoCentral(titulo, nome, extra, tipo) {
+    if (!centroEl) { centroEl = document.createElement("div"); centroEl.className = "mp-centro"; document.getElementById("app").appendChild(centroEl); }
+    centroEl.className = "mp-centro " + tipo; centroEl.innerHTML = `<span>${esc(titulo)}</span><b>${esc(nome)}</b>${extra ? `<i>${esc(extra)}</i>` : ""}`;
+    centroEl.hidden = false; void centroEl.offsetWidth; centroEl.classList.add("on");
+    clearTimeout(centroT); centroT = setTimeout(() => { centroEl.classList.remove("on"); setTimeout(() => { if (!centroEl.classList.contains("on")) centroEl.hidden = true; }, 350); }, 2000);
   }
   // aviso de baixas (lado direito, embaixo do mapa): fica 7 s na tela
   let baixasEl = null;
@@ -3827,6 +3842,7 @@
   };
   const telaCheia = () => {
     travarMouse();                                         // antes da tela cheia, que gasta a permissão do clique
+    if (mp.semTelaCheia) return;                           // a pessoa escolheu jogar em janela (menu do Esc)
     const d = document; if (d.fullscreenElement || d.webkitFullscreenElement) return;
     const el = d.documentElement, entrar = el.requestFullscreen || el.webkitRequestFullscreen; if (!entrar) return;
     try {
@@ -3838,11 +3854,12 @@
   document.addEventListener("fullscreenchange", () => { mp.telaMudouEm = performance.now(); try { window.dispatchEvent(new Event("resize")); } catch {} });      // o jogo refaz o tamanho da tela
   // PORTÃO DE ENTRADA: como a tela cheia depende de um clique, o jogo abre com uma tela pedindo esse clique. Ela volta sempre que
   // alguém sai da tela cheia fora de uma rodada (dentro da rodada, o próximo clique já devolve a tela cheia).
+  try { mp.semTelaCheia = localStorage.getItem("pebacity.janela") === "1"; } catch {}
   const portao = document.createElement("div"); portao.className = "mp-portao";
   portao.innerHTML = "<div><b>PEBACITY</b><span>Clique para jogar em tela cheia</span></div>";
   const mostrarPortao = () => {
     const el = document.documentElement, cheio = document.fullscreenElement || document.webkitFullscreenElement;
-    portao.hidden = !!cheio || !(el.requestFullscreen || el.webkitRequestFullscreen) || emRodada();
+    portao.hidden = !!cheio || !(el.requestFullscreen || el.webkitRequestFullscreen) || emRodada() || !!mp.semTelaCheia;
   };
   portao.addEventListener("click", () => { telaCheia(); portao.hidden = true; });
   (document.getElementById("app") || document.body).appendChild(portao); mostrarPortao();
