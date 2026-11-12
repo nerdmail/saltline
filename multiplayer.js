@@ -617,9 +617,10 @@
         <li><b>Bots</b> Quando a partida começa, cada time é completado com bots até ficar com 5 (no máximo 10 na partida). O nome deles começa com "Bot". Eles só combatem, não mexem nos reféns, e ficam mais difíceis conforme a dificuldade da sala.</li>
         <li><b>Quem cai</b> Fica assistindo um jogador vivo até a rodada acabar. A barra de espaço troca de jogador.</li>
         <li><b>Placar</b> Segure Tab para ver quem está vivo, os abates e as vitórias de cada time.</li>
-        <li><b>Teclas</b> C corre (correndo não atira) · Ctrl agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q troca de arma (1 arma, 2 pistola, 3 faca) · 4 granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
+        <li><b>Teclas</b> C corre (correndo não atira) · Ctrl ou X agacha · Z deita e rasteja · E abre porta e solta refém · P picha · Q troca de arma (1 arma, 2 pistola, 3 faca) · 4 granada · B bomba · V bomba-relógio (T muda o tempo) · M som.</li>
         <li><b>Reféns</b> Seguem você a um passo e meio: correm, pulam, abaixam e deitam junto. No ponto de resgate, comemoram.</li>
         <li><b>Colete e capacete</b> Espalhados pelo mapa. O colete segura um tiro no tronco e some; o capacete segura um tiro na cabeça e some.</li>
+        <li><b>Mira</b> No fácil e no médio a mira ajuda: tiro que passa raspando o inimigo ou a máquina acerta.</li>
         <li><b>Dano de tiro</b> No tronco tira 35; em perna ou pé, de 25 a 30; na cabeça, sem capacete, mata.</li>
         <li><b>Sala dos reféns</b> Tem 4 portas secretas numeradas (cada uma leva sempre ao mesmo lugar) e uma escada de mão até o duto de ar.</li>
         <li><b>Duto e telhado</b> No duto só se rasteja; ele leva a escadas para o chão e para o telhado. Dentro dele não dá para virar: S anda de ré. Na escada: W sobe, S desce. No telhado, as entradas têm moldura listrada e uma luz; uma delas é uma escada que desce por dentro do galpão.</li>
@@ -694,7 +695,7 @@
     if (b.dataset.mp === "dicas") return abrirDicas(true);
     const a = b.dataset.mp;
     if (a === "criar") criarSala();
-    else if (a === "sair") location.href = location.pathname;
+    else if (a === "sair") { mp.saindo = true; location.href = location.pathname; }
     else if (a === "copiar") {
       const campo = tela.querySelector(".mp-link input");
       try { await navigator.clipboard.writeText(campo.value); } catch { campo.select(); document.execCommand("copy"); }
@@ -1532,6 +1533,25 @@
     for (const r of mp.refens) if (r.estado < 2) testar(r.cur, noDuto(r.cur) ? 0.6 : (r.estado === 0 ? (r.boneco.modelo ? 1.32 : r.civil.senta ? 1.08 : 1.7) : 1.7) * r.civil.escala, { r });
     return melhor;
   }
+  // MIRA AJUDADA (só no fácil e no médio): se o tiro ia passar raspando um inimigo ou uma máquina, ele é puxado para o alvo.
+  // Quem já está mirando em cima do alvo não é mexido (o tiro na cabeça continua sendo de quem mirou na cabeça).
+  const AJUDA_MIRA = { facil: 0.07, medio: 0.04 };      // ângulo, em radianos (4 e 2,3 graus)
+  function miraAjudada(o, dir) {
+    const ang = mp.superUsado ? 2 * (AJUDA_MIRA[mp.dificuldade] || 0.04) : AJUDA_MIRA[mp.dificuldade]; if (!ang) return dir;      // com o super poder, o dobro da ajuda dos outros
+    try {
+      if (raioEmPessoas(o, dir, 300) || G.enemies.raycast(o, dir, 300)) return dir;
+      const meuTime = eu() && eu().time, cosMin = Math.cos(ang); let melhor = null, cMelhor = cosMin;
+      const ver = p => {
+        const v = p.clone().sub(o), d = v.length(); if (d < 0.5 || d > 150) return;
+        const c = v.dot(dir) / d; if (c <= cMelhor) return;
+        let livre = false; try { livre = G.physics.lineOfSight(o, p); } catch {}
+        if (livre) { cMelhor = c; melhor = v.multiplyScalar(1 / d); }
+      };
+      for (const j of mp.jogadores.values()) if (j.id !== mp.meuId && j.vivo && j.time !== meuTime && !(noDuto(j.cur) && !noDuto(G.player.pos))) ver(new V3(j.cur.x, j.cur.y + meioDoCorpo(j), j.cur.z));
+      for (const e of G.enemies.list) if (e.alive) ver(e.pos.clone());
+      return melhor || dir;
+    } catch { return dir; }
+  }
   function instalarTiros() {
     const original = G.combat.playerShot;
     const umTiro = (o, dir, opt) => {
@@ -1541,8 +1561,9 @@
         if ((!parede || h.dist < parede.dist) && (!maq || h.dist < maq.dist)) {
           const sniper = !!(ARMAS[mp.arma] && ARMAS[mp.arma].mata), bago = !!opt.bago;
           const q = bago ? opt.damage * (h.cabeca ? CFG.danoCabeca : 1) : h.cabeca ? 999 : h.perna ? Math.round(CFG.danoMembro[0] + Math.random() * (CFG.danoMembro[1] - CFG.danoMembro[0])) : CFG.danoTronco;
+          const qf = mp.superUsado && q < 900 ? Math.round(q * 1.5) : q;      // super poder: 50% a mais de dano
           G.combat.stats.shots++; G.combat.stats.hits++;
-          if (h.j) enviar(sniper ? { t: "acerto", em: h.j.id, q: 999, de: arr(o) } : { t: "acerto", em: h.j.id, q, de: arr(o), c: h.cabeca ? 1 : h.perna ? 2 : 0 });   // a sniper mata com um tiro, com ou sem colete
+          if (h.j) enviar(sniper ? { t: "acerto", em: h.j.id, q: 999, de: arr(o) } : { t: "acerto", em: h.j.id, q: qf, de: arr(o), c: h.cabeca ? 1 : h.perna ? 2 : 0 });   // a sniper mata com um tiro, com ou sem colete
           else enviar({ t: "acertoRefem", i: h.r.i, c: h.cabeca ? 1 : 0, s: sniper ? 1 : 0 });      // refém só se fere com tiro na cabeça; no corpo, só perde o colete
           G.hud.hitmarker(h.cabeca ? "weak" : "hit");
           try { G.fx.sparks(h.ponto, dir.clone().negate(), 5); } catch {}
@@ -1556,7 +1577,7 @@
       if (!emRodada()) return original(o, dir, opt);
       const a = ARMAS[mp.arma];
       if (!G.player.alive || mp.fase === "preparo" || !a || a.faca) return null;
-      if (!a.chumbo) return umTiro(o, dir, opt);
+      if (!a.chumbo) return umTiro(o, miraAjudada(o, dir), opt);
       let primeiro = null;
       for (let k = 0; k < a.chumbo; k++) {            // a 12: vários bagos espalhados, só de perto
         const d = dir.clone(); d.x += (Math.random() - 0.5) * 0.11; d.y += (Math.random() - 0.5) * 0.08; d.z += (Math.random() - 0.5) * 0.11; d.normalize();
@@ -2608,8 +2629,13 @@
   window.addEventListener("keydown", ev => {      // Z deita e levanta (no duto é automático)
     if (ev.code === "KeyZ" && !ev.repeat && emRodada() && G.player.alive && !(tela && !tela.hidden)) { mp.deitarManual = !mp.deitarManual; G.hud.message(mp.deitarManual ? "Deitado · Z levanta" : "De pé", 1.2); }
   });
-  window.addEventListener("keydown", ev => { if (ev.code === "KeyC") mp.correr = true; else if (ev.code === "ControlLeft" || ev.code === "ControlRight") mp.ctrl = true; });
-  window.addEventListener("keyup", ev => { if (ev.code === "KeyC") mp.correr = false; else if (ev.code === "ControlLeft" || ev.code === "ControlRight") mp.ctrl = false; });
+  window.addEventListener("keydown", ev => { if (ev.code === "KeyC") mp.correr = true; else if (ev.code === "ControlLeft" || ev.code === "ControlRight" || ev.code === "KeyX") mp.ctrl = true; });
+  window.addEventListener("keyup", ev => { if (ev.code === "KeyC") mp.correr = false; else if (ev.code === "ControlLeft" || ev.code === "ControlRight" || ev.code === "KeyX") mp.ctrl = false; });
+  // Ctrl+W (agachar e andar) é o atalho do navegador para fechar a aba. Três defesas: em tela cheia o teclado fica preso para o jogo
+  // (Chrome e Edge); os atalhos com Ctrl que o navegador deixa bloquear são bloqueados; e, se mesmo assim a aba for fechar no
+  // meio de uma rodada, o navegador pergunta antes. O X também agacha, para quem não quiser usar o Ctrl.
+  window.addEventListener("keydown", ev => { if (emRodada() && (ev.ctrlKey || ev.metaKey) && !(tela && !tela.hidden)) ev.preventDefault(); }, true);
+  window.addEventListener("beforeunload", ev => { if (emRodada() && !mp.saindo && !location.search.includes("semraf")) { ev.preventDefault(); ev.returnValue = ""; return ""; } });
   window.addEventListener("blur", () => { mp.correr = false; mp.ctrl = false; });
 
   // tecla 0, com uma arma na mão, uma vez por rodada: vida em dobro e cinco coletes e cinco capacetes (um em uso, quatro de
@@ -2617,8 +2643,8 @@
   window.addEventListener("keydown", ev => {
     if ((ev.code !== "Digit0" && ev.code !== "Numpad0") || ev.repeat || !emRodada() || mp.fase !== "valendo" || !G.player.alive || !mp.arma || mp.superUsado || (tela && !tela.hidden)) return;
     const p = G.player;
-    mp.superUsado = true; p.maxHealth = 200; p.health = 200;
-    mp.colete = true; mp.capacete = true; mp.reservaColete = 4; mp.reservaCapacete = 4;
+    mp.superUsado = true; p.maxHealth = 500; p.health = 500;      // vida 500, dez coletes e dez capacetes (um em uso, nove de reserva),
+    mp.colete = true; mp.capacete = true; mp.reservaColete = 9; mp.reservaCapacete = 9;      // mira ajudada em dobro e 50% a mais de dano por tiro (ver miraAjudada e umTiro)
     G.hud.message("Super poder ativado", 3);
   });
 
@@ -3745,7 +3771,7 @@
     const el = d.documentElement, entrar = el.requestFullscreen || el.webkitRequestFullscreen; if (!entrar) return;
     try {
       const r = entrar.call(el, { navigationUI: "hide" });
-      if (r && r.then) r.then(() => { try { if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(["Escape"]); } catch {} }).catch(() => {});
+      if (r && r.then) r.then(() => { try { if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(); } catch {} }).catch(() => {});      // prende todas as teclas: Esc, Ctrl+W, Ctrl+T...
     } catch {}
   };
   for (const tipo of ["pointerdown", "pointerup", "click", "touchend", "keydown"]) window.addEventListener(tipo, telaCheia, true);
