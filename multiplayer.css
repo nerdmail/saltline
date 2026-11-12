@@ -116,3 +116,11 @@
 .mp-mapa { position: absolute; z-index: 29; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(86px + env(safe-area-inset-top, 0px)); width: 176px; height: auto; border: 1px solid var(--line); pointer-events: none; }
 .mp-mapa[hidden] { display: none; }
 @media (max-height: 560px) { .mp-mapa { width: 120px; } }
+
+/* quem matou quem (lado direito, embaixo do mapa) */
+.mp-baixas { position: absolute; z-index: 29; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(330px + env(safe-area-inset-top, 0px)); display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; }
+.mp-baixa { padding: 7px 12px; background: rgba(11, 13, 15, .78); border-right: 4px solid rgba(232, 228, 218, .45); font: 700 19px/1.1 var(--f-label); letter-spacing: .04em; color: var(--bone); white-space: nowrap; transition: opacity .5s; }
+.mp-baixa i { font-style: normal; font-weight: 500; opacity: .8; margin: 0 6px; text-transform: uppercase; font-size: 14px; letter-spacing: .12em; }
+.mp-baixa.minha { border-right-color: var(--signal); background: rgba(40, 26, 8, .88); }
+.mp-baixa.some { opacity: 0; }
+@media (max-height: 560px) { .mp-baixas { top: calc(250px + env(safe-area-inset-top, 0px)); } .mp-baixa { font-size: 15px; } }

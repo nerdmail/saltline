@@ -446,7 +446,11 @@
         if (v && v.id !== mp.meuId) v.vivo = false;
         if (v) v.mortes = (v.mortes | 0) + 1;
         if (k && k !== v) { k.abates = (k.abates | 0) + 1; k.abatesRodada = (k.abatesRodada | 0) + 1; }
-        if (v) G.hud.feed(k ? `<b>${esc(k.nome)}</b> eliminou <b>${esc(v.nome)}</b>` : m.por === "refem" ? `<b>${esc(v.nome)}</b> foi abatido por um refém` : m.por === "queda" ? `<b>${esc(v.nome)}</b> caiu de muito alto` : `<b>${esc(v.nome)}</b> caiu para as máquinas`);
+        if (v) {                                  // quem matou quem, grande, com a cor de cada time
+          const nome = x => `<b style="color:${TIMES[x.time] ? TIMES[x.time].css : "#e8e4da"}">${esc(x.nome)}</b>`;
+          avisarBaixa(k && k !== v ? `${nome(k)} <i>matou</i> ${nome(v)}` : m.por === "refem" ? `${nome(v)} <i>foi abatido por um refém</i>` : m.por === "queda" ? `${nome(v)} <i>morreu na queda</i>` : `${nome(v)} <i>caiu para as máquinas</i>`,
+            v.id === mp.meuId || (k && k.id === mp.meuId));
+        }
         break;
       }
       case "feed": G.hud.feed(m.html); break;
@@ -656,9 +660,19 @@
       <div class="mp-acoes">
         ${mp.anfitriao ? `<button class="btn primary" data-mp="comecar">Começar partida</button>`
           : `<span class="mp-espera">${emAndamento ? "Partida em andamento — você entra na próxima rodada" : "Aguardando o anfitrião começar"}</span>`}
+        <button class="btn" data-mp="ajustes">Ajustes</button>
         <button class="btn" data-mp="nome">Trocar apelido</button>
         <button class="btn" data-mp="sair">Sair da sala</button>
       </div>`);
+  }
+  // abre o painel de ajustes do próprio jogo (qualidade, sensibilidade, volume, campo de visão) por cima da sala ou do menu da partida
+  function abrirAjustes() {
+    try {
+      const m = solo.menus; m.show("title");
+      const b = m.root.querySelector('[data-act="settings"]'); if (b) b.click();
+      for (let el = m.root.querySelector('[data-act="close-panel"]'); el && el !== m.root; el = el.parentElement) if (getComputedStyle(el).position !== "static") el.style.zIndex = "90";
+      const t = setInterval(() => { if (!m.panelOpen) { clearInterval(t); try { m.show("none"); m.locationCard(false); } catch {} } }, 250);
+    } catch (e) { console.warn("[mp] ajustes", e); }
   }
   document.addEventListener("click", async ev => {
     const b = ev.target.closest && ev.target.closest("[data-mp]"); if (!b) return;
@@ -677,6 +691,7 @@
     else if (a === "comecar") { mp.resultado = null; mp.placar = { p: 0, t: 0 }; mp.rodada = 0; novaRodada(); }
     else if (a === "nome") { await pedirPerfil(true); location.reload(); }
     else if (a === "voltar") menuDaPartida(false);
+    else if (a === "ajustes") abrirAjustes();
     else if (a === "lobby") {
       mp.menuAberto = false;
       if (mp.anfitriao) {                                  // o anfitrião encerra a partida para todos, com o placar como está
@@ -707,6 +722,7 @@
       <p class="mp-nota">A partida continua rodando para os outros jogadores enquanto este menu está aberto.</p>
       <div class="mp-acoes">
         <button class="btn primary" data-mp="voltar">Voltar ao jogo</button>
+        <button class="btn" data-mp="ajustes">Ajustes</button>
         <button class="btn" data-mp="lobby">${mp.anfitriao ? "Encerrar a partida" : "Ir para a sala de espera"}</button>
         <button class="btn" data-mp="sair">Sair da sala</button>
       </div>
@@ -1354,13 +1370,26 @@
     if (ARMAS[chave].faca) { c.scale.setScalar(1.4); c.position.set(0, -0.3, 0); } else c.position.set(-0.02, -0.35, -0.1);
     b.arma.add(c);
   }
+  // placa com o nome em cima da cabeça: letra grande com contorno, do mesmo tamanho na tela de perto ou de longe
   function criarPlaca(texto, css, grande) {
-    const T = G.THREE, cv = document.createElement("canvas"); cv.width = 256; cv.height = 64;
-    const c = cv.getContext("2d"); c.font = `600 ${grande ? 52 : 34}px "Barlow Condensed", Arial, sans-serif`; c.textAlign = "center"; c.textBaseline = "middle";
-    c.lineWidth = 6; c.strokeStyle = "rgba(0,0,0,.8)"; c.strokeText(texto, 128, 34); c.fillStyle = css; c.fillText(texto, 128, 34);
-    const s = new T.Sprite(new T.SpriteMaterial({ map: new T.CanvasTexture(cv), transparent: true, depthWrite: false }));
-    s.scale.set(1.3, 0.33, 1);
+    const T = G.THREE, cv = document.createElement("canvas"); cv.width = 512; cv.height = 128;
+    const c = cv.getContext("2d"); c.font = `700 ${grande ? 92 : 78}px "Barlow Condensed", Arial, sans-serif`; c.textAlign = "center"; c.textBaseline = "middle"; c.lineJoin = "round";
+    const larg = c.measureText(texto).width, k = larg > 480 ? 480 / larg : 1;
+    c.save(); c.translate(256, 66); c.scale(k, 1);
+    c.lineWidth = 14; c.strokeStyle = "rgba(0,0,0,.9)"; c.strokeText(texto, 0, 0); c.fillStyle = "#ffffff"; c.fillText(texto, 0, 0); c.restore();
+    c.fillStyle = css; c.fillRect(256 - Math.min(240, larg * k / 2), 112, Math.min(480, larg * k), 10);      // faixa da cor do time embaixo do nome
+    const tex = new T.CanvasTexture(cv); if (T.SRGBColorSpace) tex.colorSpace = T.SRGBColorSpace;
+    const s = new T.Sprite(new T.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, sizeAttenuation: false }));
+    s.scale.set(0.17, 0.0425, 1);
     return s;
+  }
+  // aviso de baixas (lado direito, embaixo do mapa): fica 7 s na tela
+  let baixasEl = null;
+  function avisarBaixa(html, minha) {
+    if (!baixasEl) { baixasEl = document.createElement("div"); baixasEl.className = "mp-baixas"; document.getElementById("app").appendChild(baixasEl); }
+    const li = document.createElement("div"); li.className = "mp-baixa" + (minha ? " minha" : ""); li.innerHTML = html; baixasEl.appendChild(li);
+    while (baixasEl.children.length > 5) baixasEl.removeChild(baixasEl.firstChild);
+    setTimeout(() => { li.classList.add("some"); setTimeout(() => li.remove(), 500); }, 7000);
   }
   function removerBoneco(j) {
     if (!j.boneco) return;
@@ -3693,6 +3722,25 @@
   // SEM CHUVA: o tempo do jogo fica seco (a chuva atrapalhava a visão)
   const semChuva = () => { try { const g = window.__G; for (const k in g) if (g[k] && typeof g[k].setRain === "function") g[k].setRain(0); } catch {} };
   setInterval(semChuva, 2000);
+  // IMAGEM MAIS CLARA nas rodadas do multiplayer (a exposição do jogo original é de fim de tarde, escura)
+  setInterval(() => { try { const r = window.__G && window.__G.render; if (r && typeof r.exposure === "number") r.exposure = emRodada() ? 1.55 : 1; } catch {} }, 500);
+  // SOM AMBIENTE. O jogo toca em laço chuva, chuva por dentro, vento e mar (nessa ordem) e depois a música. Não há controle de
+  // volume só para eles, então o ajuste é feito na própria gravação, na hora em que cada laço começa a tocar: os dois primeiros
+  // (chuva) ficam mudos e os outros ficam bem mais baixos. Tiros e passos não são laços e continuam como estavam.
+  try {
+    const P = window.AudioBufferSourceNode && window.AudioBufferSourceNode.prototype, iniciarSom = P && P.start, lacos = window.__lacos = [];
+    if (iniciarSom) P.start = function (...a) {
+      try {
+        const b = this.buffer;
+        if (this.loop && b && b.duration > 1.5 && lacos.indexOf(b) < 0) {
+          lacos.push(b);
+          const fator = lacos.length <= 2 ? 0 : 0.3;
+          for (let c = 0; c < b.numberOfChannels; c++) { const d = b.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] *= fator; }
+        }
+      } catch {}
+      return iniciarSom.apply(this, a);
+    };
+  } catch {}
   const espera = setInterval(() => {
     if (window.__fatal) return clearInterval(espera);
     if (window.__ready && window.__G && window.__G.game && window.__G.game.menus) { clearInterval(espera); try { iniciar(); } catch (e) { console.error("[mp] não iniciou", e); } }
