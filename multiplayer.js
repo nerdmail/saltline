@@ -448,6 +448,10 @@
         if (k && k !== v) { k.abates = (k.abates | 0) + 1; k.abatesRodada = (k.abatesRodada | 0) + 1; }
         if (v) {                                  // quem matou quem, grande, com a cor de cada time
           const nome = x => `<b style="color:${TIMES[x.time] ? TIMES[x.time].css : "#e8e4da"}">${esc(x.nome)}</b>`;
+          if (k && k !== v && k.id === mp.meuId) {            // destaque para quem matou, no meio da tela
+            const n = k.abatesRodada | 0;
+            G.hud.warn("Você matou " + v.nome + (n > 1 ? " · " + n + " na rodada" : ""), 2.6); tocar("objective");
+          } else if (v.id === mp.meuId && k && k !== v) G.hud.warn("Você foi morto por " + k.nome, 4);
           avisarBaixa(k && k !== v ? `${nome(k)} <i>matou</i> ${nome(v)}` : m.por === "refem" ? `${nome(v)} <i>foi abatido por um refém</i>` : m.por === "queda" ? `${nome(v)} <i>morreu na queda</i>` : `${nome(v)} <i>caiu para as máquinas</i>`,
             v.id === mp.meuId || (k && k.id === mp.meuId));
         }
@@ -750,8 +754,13 @@
   }, true);
   // sem o Esc preso (Safari, Firefox, ou fora da tela cheia) o navegador engole a tecla e só solta o mouse: abre o menu do mesmo jeito
   document.addEventListener("pointerlockchange", () => {
-    if (document.pointerLockElement || !emRodada() || mp.menuAberto || (tela && !tela.hidden) || (pichoEl && !pichoEl.hidden)) return;
-    setTimeout(() => { if (!document.pointerLockElement && emRodada() && !mp.menuAberto && !(tela && !tela.hidden) && !(pichoEl && !pichoEl.hidden)) menuDaPartida(true); }, 150);
+    if (document.pointerLockElement) { mp.travouEm = performance.now(); return; }
+    if (!emRodada() || mp.menuAberto || (tela && !tela.hidden) || (pichoEl && !pichoEl.hidden)) return;
+    // só vale como "Esc" se o mouse estava preso havia mais de 1 s e a tela não acabou de entrar ou sair da tela cheia
+    // (entrar em tela cheia solta o mouse sozinho, e isso não é um pedido de menu)
+    const agora = performance.now();
+    if (agora - (mp.travouEm || 0) < 1000 || agora - (mp.telaMudouEm || 0) < 2000) return;
+    setTimeout(() => { if (!document.pointerLockElement && emRodada() && !mp.menuAberto && !(tela && !tela.hidden) && !(pichoEl && !pichoEl.hidden) && performance.now() - (mp.telaMudouEm || 0) > 2000) menuDaPartida(true); }, 200);
   });
 
   /* ------------------------------------------------------------------ rodadas */
@@ -3714,7 +3723,17 @@
   // TELA CHEIA SEMPRE. O navegador só deixa entrar em tela cheia a partir de um clique ou tecla da pessoa; então, a cada
   // clique ou tecla, se a página não estiver em tela cheia, ela entra. Em tela cheia o Esc fica preso para o jogo (pausa),
   // em vez de sair da tela cheia, nos navegadores que permitem isso.
+  // MOUSE = MIRA. Se a primeira captura do mouse falha (por exemplo, a rodada começa sem um clique do convidado), o jogo original
+  // desiste e passa a girar a câmera só com o cursor na borda da tela. Aqui, durante a rodada, todo clique ou tecla pede a
+  // captura de novo, até pegar; quando pega, o jogo volta sozinho ao modo normal de mira.
+  const travarMouse = () => {
+    try {
+      if (!G || !emRodada() || document.pointerLockElement || G.input.touch || (tela && !tela.hidden) || (pichoEl && !pichoEl.hidden) || (dicasEl && dicasEl.classList.contains("aberta"))) return;
+      G.input.requestLock();
+    } catch {}
+  };
   const telaCheia = () => {
+    travarMouse();                                         // antes da tela cheia, que gasta a permissão do clique
     const d = document; if (d.fullscreenElement || d.webkitFullscreenElement) return;
     const el = d.documentElement, entrar = el.requestFullscreen || el.webkitRequestFullscreen; if (!entrar) return;
     try {
@@ -3723,7 +3742,7 @@
     } catch {}
   };
   for (const tipo of ["pointerdown", "pointerup", "click", "touchend", "keydown"]) window.addEventListener(tipo, telaCheia, true);
-  document.addEventListener("fullscreenchange", () => { try { window.dispatchEvent(new Event("resize")); } catch {} });      // o jogo refaz o tamanho da tela
+  document.addEventListener("fullscreenchange", () => { mp.telaMudouEm = performance.now(); try { window.dispatchEvent(new Event("resize")); } catch {} });      // o jogo refaz o tamanho da tela
   // PORTÃO DE ENTRADA: como a tela cheia depende de um clique, o jogo abre com uma tela pedindo esse clique. Ela volta sempre que
   // alguém sai da tela cheia fora de uma rodada (dentro da rodada, o próximo clique já devolve a tela cheia).
   const portao = document.createElement("div"); portao.className = "mp-portao";
