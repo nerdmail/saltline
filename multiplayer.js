@@ -189,7 +189,7 @@
   };
   const eu = () => mp.jogadores.get(mp.meuId);
   const dif = () => DIFICULDADES[mp.dificuldade] || DIFICULDADES.medio;
-  const emRodada = () => mp.ativo && mp.fase !== "lobby";
+  const emRodada = () => mp.ativo && mp.fase !== "lobby" && !CARGA.ensaio;      // o ensaio da sala de espera não conta como rodada
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const arr = v => [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)];
   const tocar = (nome, opt) => { try { G.audio.play(nome, opt); } catch {} };
@@ -214,6 +214,20 @@
   function paraTodos(msg, menos) {
     for (const [id, c] of mp.cons) if (id !== menos && c.open) c.send(msg);
     if (menos !== mp.meuId) doAnfitriao(msg);
+  }
+  // POSIÇÕES: vão pelo canal rápido quando ele está aberto. Nele nada espera na fila: se um pacote se perde na internet, os
+  // seguintes chegam assim mesmo e o atrasado é descartado pelo número. Sem o canal rápido, seguem pelo canal de sempre.
+  function mandarEstado(msg) {
+    const r = !mp.anfitriao && mp.rapida;
+    if (r && r.open) { msg.n = mp.envioN = (mp.envioN || 0) + 1; try { return r.send(msg); } catch {} }
+    enviar(msg);
+  }
+  function mandarEstados(msg) {
+    msg.n = mp.envioN = (mp.envioN || 0) + 1;
+    for (const [id, c] of mp.cons) {
+      const r = mp.rapidas && mp.rapidas.get(id);
+      try { if (r && r.open) r.send(msg); else if (c.open) c.send(msg); } catch {}
+    }
   }
   function paraUm(id, msg) {
     if (id === mp.meuId) doAnfitriao(msg);
@@ -241,6 +255,17 @@
       entrarNoLobby();
     });
     peer.on("connection", con => {
+      if (con.label === "rapida") {                       // segundo canal do convidado, só para posições: sem fila, o que atrasa é descartado
+        con.on("open", () => (mp.rapidas = mp.rapidas || new Map()).set(con.peer, con));
+        con.on("data", msg => {
+          const j = mp.jogadores.get(con.peer);
+          if (!j || !msg || msg.t !== "estado" || !(msg.n > (j.vistoN || 0))) return;
+          j.vistoN = msg.n; doJogador(con.peer, msg);
+        });
+        const fora = () => { if (mp.rapidas && mp.rapidas.get(con.peer) === con) mp.rapidas.delete(con.peer); };
+        con.on("close", fora); con.on("error", fora);
+        return;
+      }
       con.on("open", () => {
         if ([...mp.jogadores.values()].filter(x => !x.bot).length >= CFG.maxJogadores) { con.send({ t: "recusa", motivo: "A sala já está com 10 jogadores, que é o máximo da partida." }); return setTimeout(() => con.close(), 500); }
         mp.cons.set(con.peer, con);
@@ -267,7 +292,17 @@
     peer.on("open", id => {
       const con = peer.connect(CFG.prefixo + codigo, { reliable: true, serialization: "json" });
       mp.conAnfitriao = con;
-      con.on("open", () => { mp.ativo = true; mp.meuId = id; con.send({ t: "oi", nome }); });
+      con.on("open", () => {
+        mp.ativo = true; mp.meuId = id; con.send({ t: "oi", nome });
+        try {                                             // segundo canal, só para posições (ver abrirComoAnfitriao)
+          const r = peer.connect(CFG.prefixo + codigo, { reliable: false, serialization: "json", label: "rapida" });
+          mp.vistoN = 0;
+          r.on("open", () => { mp.rapida = r; });
+          r.on("data", msg => { if (!msg || msg.t !== "estados" || !(msg.n > mp.vistoN)) return; mp.vistoN = msg.n; doAnfitriao(msg); });
+          const fora = () => { if (mp.rapida === r) mp.rapida = null; };
+          r.on("close", fora); r.on("error", fora);
+        } catch {}
+      });
       con.on("data", msg => { if (msg && typeof msg === "object") doAnfitriao(msg); });
       con.on("close", () => { if (mp.ativo) fimDeConexao("O anfitrião saiu ou a conexão caiu."); });
     });
@@ -295,6 +330,7 @@
       case "time":
         if (m.time === "p" || m.time === "t") { j.time = m.time; mandarLobby(); }
         break;
+      case "pronto": if (!j.pronto) { j.pronto = true; mandarLobby(); } break;      // terminou de carregar o jogo na sala de espera
       case "estado":
         if (id !== mp.meuId) { j.pos.fromArray(m.p); j.yaw = m.y; j.pitch = m.x; j.agachado = m.c === 1; }
         j.noChao = m.c === 2;                      // deitado por conta própria (tecla Z)
@@ -390,38 +426,38 @@
     }
   }
   function saiu(id) {
-    mp.cons.delete(id);
+    mp.cons.delete(id); if (mp.rapidas) mp.rapidas.delete(id);
     const j = mp.jogadores.get(id);
     if (!j) return;
     removerBoneco(j); mp.jogadores.delete(id); if (mp.anfitriao) tirarDoCarro(id);
     if (mp.ativo) { paraTodos({ t: "feed", html: `<b>${esc(j.nome)}</b> saiu da sala` }); mandarLobby(); }
   }
   function mandarLobby() {
-    paraTodos({ t: "lobby", fase: mp.fase, placar: mp.placar, rodada: mp.rodada, dificuldade: mp.dificuldade, rodadas: mp.rodadasTotal,
-      jogadores: [...mp.jogadores.values()].map(j => ({ id: j.id, nome: j.nome, time: j.time, bot: j.bot ? 1 : 0 })) });
+    paraTodos({ t: "lobby", fase: CARGA.ensaio ? "lobby" : mp.fase, placar: mp.placar, rodada: mp.rodada, dificuldade: mp.dificuldade, rodadas: mp.rodadasTotal,
+      jogadores: [...mp.jogadores.values()].map(j => ({ id: j.id, nome: j.nome, time: j.time, bot: j.bot ? 1 : 0, pronto: carregou(j) ? 1 : 0 })) });
   }
 
   /* ----------------------------------------------- mensagens: anfitrião -> jogador */
   function doAnfitriao(m) {
     // quem ainda está na sala de espera ignora o que acontece dentro da rodada em andamento
-    if (mp.fase === "lobby" && !["bemvindo", "recusa", "lobby", "rodada"].includes(m.t)) return;
+    if ((mp.fase === "lobby" || CARGA.ensaio) && !["bemvindo", "recusa", "lobby", "rodada"].includes(m.t)) return;
     switch (m.t) {
-      case "bemvindo": mp.meuId = m.id; break;
+      case "bemvindo": mp.meuId = m.id; if (CARGA.feito) enviar({ t: "pronto" }); break;
       case "recusa": fimDeConexao(m.motivo); break;
       case "lobby": {
         const vistos = new Set();
         for (const d of m.jogadores) {
           vistos.add(d.id);
           const j = mp.jogadores.get(d.id) || novoJogador(d.id, d.nome);
-          j.nome = d.nome; j.time = d.time; if (!mp.anfitriao) j.bot = !!d.bot;
+          j.nome = d.nome; j.time = d.time; if (!mp.anfitriao) { j.bot = !!d.bot; j.pronto = !!d.pronto; }
         }
         for (const [id, j] of mp.jogadores) if (!vistos.has(id)) { removerBoneco(j); mp.jogadores.delete(id); }
         mp.placar = m.placar; mp.rodada = m.rodada; mp.dificuldade = m.dificuldade; if (m.rodadas) mp.rodadasTotal = m.rodadas;
-        if (!mp.anfitriao && mp.fase === "lobby") mp.faseAnfitriao = m.fase;
+        if (!mp.anfitriao && (mp.fase === "lobby" || CARGA.ensaio)) mp.faseAnfitriao = m.fase;
         desenharLobby();
         break;
       }
-      case "rodada": comecarRodadaLocal(m); break;
+      case "rodada": fimDoEnsaio(); comecarRodadaLocal(m); break;
       case "estados":
         mp.tempo = m.tempo;
         for (const d of m.j) {
@@ -615,13 +651,35 @@
   // CARREGAMENTO NA SALA DE ESPERA. O que antes era montado no começo da primeira rodada (e por isso ela travava) é feito aqui,
   // um passo a cada 120 ms, enquanto as pessoas entram: os bots, a sala dos reféns com o duto, o guindaste e o pátio novo, a
   // grade de caminhos, os desenhos das pichações, o boneco de cada jogador e a preparação das texturas e dos materiais na
-  // placa de vídeo. "Começar partida" só libera quando termina (ou depois de 30 s, se algum passo falhar).
-  const CARGA = { passo: 0, feito: false, pct: 0, inicio: 0, comp: 0 };
+  // placa de vídeo. Por último vem o ENSAIO: uma rodada de mentira, sem som e sem rede, rodando de verdade atrás da tela da
+  // sala por uns 2 segundos, com todas as armas, itens, bonecos, reféns, máquinas, tiros e uma explosão à vista. Assim tudo o
+  // que a primeira rodada usaria pela primeira vez (e por isso travava) já foi usado. "Começar partida" só libera quando todos
+  // os jogadores da sala terminaram (ou depois de 45 s neste computador, se algum passo falhar).
+  const CARGA = { passo: 0, feito: false, pct: 0, inicio: 0, comp: 0, avisado: false };
+  // já carregou? Bot sempre; eu, quando o meu carregamento termina; os outros, quando avisam.
+  function carregou(j) { return !!j.bot || (j.id === mp.meuId ? CARGA.feito : !!j.pronto); }
+  // A partida só começa com todo mundo carregado. Quem passar de 90 s sem avisar (aba em segundo plano, computador travado) não segura os outros.
+  function todosProntos() {
+    if (!CARGA.feito) return false;
+    for (const j of mp.jogadores.values()) if (!carregou(j) && performance.now() - (j.entrouEm || 0) < 90000) return false;
+    return true;
+  }
+  function faltamCarregar() { return [...mp.jogadores.values()].filter(j => !carregou(j)).map(j => j.nome); }
+  function avisarPronto() {
+    if (!CARGA.feito || CARGA.avisado || !mp.ativo) return;
+    CARGA.avisado = true;
+    if (mp.anfitriao) mandarLobby(); else enviar({ t: "pronto" });
+  }
+  function rotuloComecar() {
+    if (!CARGA.feito) return "Carregando… " + CARGA.pct + "%";
+    return todosProntos() ? "Começar partida" : "Aguardando " + (faltamCarregar().join(", ") || "jogadores") + " carregar…";
+  }
   function carregarNaSala() {
-    if (CARGA.feito || !mp.ativo || mp.fase !== "lobby" || !G) return;
+    if (CARGA.feito || !mp.ativo || (mp.fase !== "lobby" && !CARGA.ensaio) || !G) return;
     if (!CARGA.inicio) CARGA.inicio = performance.now();
     const passou = performance.now() - CARGA.inicio;
-    if (passou > 30000) { CARGA.feito = true; CARGA.pct = 100; return mostrarCarga(); }
+    if (passou > 45000) { fimDoEnsaio(); CARGA.feito = true; CARGA.pct = 100; return mostrarCarga(); }
+    if (CARGA.ensaio) { try { ensaiar(); } catch (e) { console.warn("[mp] ensaio", e); fimDoEnsaio(); } return mostrarCarga(); }
     if (!soldado && passou < 12000) return;               // espera os modelos chegarem
     try {
       const n = CARGA.passo;
@@ -634,27 +692,67 @@
         if (falta && n < 40) {                             // um boneco por passo
           falta.boneco = criarBoneco({ nome: falta.nome, css: TIMES[falta.time].css, armado: true, time: falta.time }); falta.boneco.time = falta.time; falta.boneco.nome = falta.nome;
           armarBoneco(falta.boneco, falta.time + "_fuzil");
-        } else {                                           // por fim: tudo à vista por alguns quadros, atrás da tela da sala, para a placa de vídeo preparar
-          const cam = G.camera, frente = new V3(0, 0, -1).applyQuaternion(cam.quaternion), bonecos = [...mp.jogadores.values()].filter(j => j.boneco).map(j => j.boneco);
-          if (!CARGA.comp) {
-            cenario.visible = true;
-            bonecos.forEach((b, k) => { b.grupo.position.copy(cam.position).addScaledVector(frente, 7 + k * 0.6); b.grupo.position.y -= 1.6; b.grupo.visible = true; });
-            try { const r = G.renderer || (G.render && G.render.renderer); if (r && r.compile) r.compile(G.scene, cam); } catch {}
-          }
-          if (++CARGA.comp > 8) { cenario.visible = false; for (const b of bonecos) b.grupo.visible = false; CARGA.feito = true; }
-          CARGA.pct = Math.min(100, 90 + CARGA.comp); return mostrarCarga();
-        }
+        } else { ensaiar(); return mostrarCarga(); }
       }
     } catch (e) { console.warn("[mp] carregamento na sala, passo " + CARGA.passo, e); }
-    CARGA.passo++; CARGA.pct = Math.min(90, Math.round(CARGA.passo / 20 * 90)); mostrarCarga();
+    CARGA.passo++; CARGA.pct = Math.min(80, Math.round(CARGA.passo / 20 * 80)); mostrarCarga();
+  }
+  function ensaiar() {
+    const chaves = Object.keys(ARMAS), outros = [...mp.jogadores.values()].filter(j => j.id !== mp.meuId && j.time);
+    if (!CARGA.ensaio) {                                   // começa a rodada de mentira
+      CARGA.ensaio = true; CARGA.comp = 0;
+      try { G.audio.setVolume(0); } catch {}
+      const b = pontosDeNascimento("p", 1)[0], x0 = b[0], y0 = b[1], z0 = b[2], nasc = {}, armas = [], itens = [];
+      nasc[mp.meuId] = [x0, y0, z0, TIMES.p.yaw];           // de frente para +x: tudo fica enfileirado à frente
+      outros.forEach((j, k) => { nasc[j.id] = [x0 + 5 + (k >> 1) * 1.1, y0, z0 + (k % 2 ? 1 : -1) * (0.8 + (k >> 1) * 0.45), 0]; });
+      chaves.forEach((c, i) => armas.push([9000 + i, c, x0 + 3 + (i >> 1) * 0.7, z0 + (i % 2 ? 2 : -2), y0, 0]));
+      ["granada", "bomba", "relogio", "colete", "capacete"].forEach((t, i) => itens.push([9100 + i, t, x0 + 4 + i * 0.8, z0]));
+      CARGA.antes = { placar: mp.placar, rodada: mp.rodada, resultado: mp.resultado };
+      CARGA.onde = [x0, y0, z0];
+      comecarRodadaLocal({ n: mp.rodada, placar: mp.placar, dificuldade: mp.dificuldade, nasc, armas, itens, carro: [x0 + 12, z0 + 5, 0] }, true);
+      mp.preparoT = 999; mp.resultado = CARGA.antes.resultado;
+      for (const j of outros) { j.vivo = true; j.pos.y = y0; j.cur.copy(j.pos); }
+      return;
+    }
+    const n = ++CARGA.comp, [x0, y0, z0] = CARGA.onde, curta = chaves.find(c => VARIANTES[c] && VARIANTES[c].curta), faca = chaves.find(c => ARMAS[c].faca);
+    CARGA.pct = Math.min(99, 80 + n);
+    if (n === 2) { mp.arma = "p_fuzil"; for (const j of outros) j.arma = j.time + "_fuzil"; }
+    if (n === 3) {                                         // máquinas, reféns soltos e presos
+      try { G.enemies.spawn("gull", new V3(x0 + 9, y0 + 3.5, z0 - 2), { passive: true, yaw: 0, patrolRadius: 0, hover: y0 + 3.5 }); } catch {}
+      try { G.enemies.spawn("hound", new V3(x0 + 8, y0, z0 + 2), { passive: true, yaw: 0, patrolRadius: 0 }); } catch {}
+      mp.refens.forEach((r, i) => { r.pos.set(x0 + 6.5 + i * 0.9, y0, z0 + (i % 2 ? 2.6 : -2.6)); r.cur.copy(r.pos); r.estado = i % 2; r.prot = 3; });
+    }
+    if (n === 5 || n === 9) {                              // tiros e explosão
+      const o = new V3(x0 + 1, y0 + 1.5, z0), e = new V3(x0 + 14, y0 + 1.5, z0 + 1);
+      try { G.fx.tracer(o, e); } catch {}
+      try { G.render.lightPool.flash(o, 16756832, 30, 8, 0.05); } catch {}
+      try { G.fx.explosion(new V3(x0 + 10, y0 + 0.5, z0), 1.4); } catch {}
+      for (const j of outros) j.tiroVisto = performance.now();
+    }
+    if (n === 6 && curta) { mp.arma = curta; outros.forEach((j, k) => { if (k % 2) j.arma = ARMAS[j.time + "_pistola"] ? j.time + "_pistola" : curta; }); }
+    if (n === 9 && faca) { mp.arma = faca; outros.forEach((j, k) => { if (k % 3 === 0) j.arma = ARMAS[j.time + "_faca"] ? j.time + "_faca" : faca; }); }
+    if (n === 10) outros.forEach((j, k) => { if (k < 2) j.vivo = false; else if (k < 4) j.agachado = true; else if (k < 6) j.noChao = true; j.armadura = 3; });
+    if (n >= 16) fimDoEnsaio();
+  }
+  function fimDoEnsaio() {
+    if (!CARGA.ensaio) return;
+    try { sairDaPartida(); } catch (e) { console.warn("[mp] fim do ensaio", e); mp.fase = "lobby"; }
+    CARGA.ensaio = false; CARGA.feito = true; CARGA.pct = 100;
+    mp.arma = null; mp.principal = null;
+    if (CARGA.antes) { mp.placar = CARGA.antes.placar; mp.rodada = CARGA.antes.rodada; mp.resultado = CARGA.antes.resultado; }
+    for (const j of mp.jogadores.values()) { j.vivo = false; j.arma = null; j.armadura = 0; j.agachado = false; j.noChao = false; j.quedaY = null; j.pos.set(0, -50, 0); j.cur.copy(j.pos); }
+    try { zerarRefens(); } catch {}
+    try { G.audio.setVolume(solo.menus.settings.volume); } catch {}
+    if (mp.anfitriao) mandarLobby(); else desenharLobby();
   }
   function mostrarCarga() {
     if (!tela || tela.hidden) return;
     const el = tela.querySelector(".mp-carga"), b = tela.querySelector('[data-mp="comecar"]');
-    if (el) el.textContent = CARGA.feito ? "Jogo carregado: a primeira rodada já começa leve." : "Carregando o jogo… " + CARGA.pct + "%";
-    if (b) { b.disabled = !CARGA.feito; b.textContent = CARGA.feito ? "Começar partida" : "Carregando… " + CARGA.pct + "%"; }
+    avisarPronto();
+    if (el) el.textContent = CARGA.feito ? "Jogo carregado neste computador." : "Carregando o jogo… " + CARGA.pct + "%";
+    if (b) { const ok = todosProntos(), txt = rotuloComecar(); if (b.disabled === ok) b.disabled = !ok; if (b.textContent !== txt) b.textContent = txt; }
   }
-  setInterval(carregarNaSala, 120);
+  setInterval(() => { carregarNaSala(); if (CARGA.feito && mp.ativo && mp.fase === "lobby") mostrarCarga(); }, 120);
   function linkDaSala() { return location.origin + location.pathname + "?sala=" + mp.codigo; }
   // as dicas abrem numa janela por cima da sala de espera (clicar fora, no botão ou apertar Esc fecha)
   const DICAS = `<ul class="mp-regras">
@@ -698,7 +796,7 @@
   function desenharLobby() {
     if (mp.fase !== "lobby" || !mp.ativo) return;
     const lista = t => [...mp.jogadores.values()].filter(j => j.time === t)
-      .map(j => `<li>${esc(j.nome)}${j.id === mp.meuId ? " <em>você</em>" : ""}${j.id === "anfitriao" ? " <em>anfitrião</em>" : ""}${j.bot ? " <em>bot</em>" : ""}</li>`).join("") || "<li class='mp-vazio'>ninguém ainda</li>";
+      .map(j => `<li>${esc(j.nome)}${j.id === mp.meuId ? " <em>você</em>" : ""}${j.id === "anfitriao" ? " <em>anfitrião</em>" : ""}${j.bot ? " <em>bot</em>" : ""}${carregou(j) ? "" : " <em>carregando…</em>"}</li>`).join("") || "<li class='mp-vazio'>ninguém ainda</li>";
     const meu = eu() && eu().time;
     const local = location.protocol === "file:" || /^(localhost|127\.|\[::1\])/.test(location.host);
     const emAndamento = !mp.anfitriao && mp.faseAnfitriao && mp.faseAnfitriao !== "lobby";
@@ -719,10 +817,10 @@
         : `<b>${mp.rodadasTotal}</b>`}</div>
       ${linhaBrilho()}
       <p class="mp-nota">${d.nome}: rodadas de ${Math.floor(d.tempo / 60)}:${String(d.tempo % 60).padStart(2, "0")}, até ${d.max} máquinas atacando os dois times${d.maq.dano < 0.6 ? " (fracas: incomodam mais do que matam)" : ""}. Partida de ${mp.rodadasTotal} rodadas: ganha o time que vencer mais.</p>
-      <p class="mp-nota mp-carga">${CARGA.feito ? "Jogo carregado: a primeira rodada já começa leve." : "Carregando o jogo… " + CARGA.pct + "%"}</p>
+      <p class="mp-nota mp-carga">${CARGA.feito ? "Jogo carregado neste computador." : "Carregando o jogo… " + CARGA.pct + "%"}</p>
       <div class="mp-acoes mp-acoes-dicas"><button class="btn small" data-mp="dicas">Ver dicas</button></div>
       <div class="mp-acoes">
-        ${mp.anfitriao ? `<button class="btn primary" data-mp="comecar" ${CARGA.feito ? "" : "disabled"}>${CARGA.feito ? "Começar partida" : "Carregando… " + CARGA.pct + "%"}</button>`
+        ${mp.anfitriao ? `<button class="btn primary" data-mp="comecar" ${todosProntos() ? "" : "disabled"}>${rotuloComecar()}</button>`
           : `<span class="mp-espera">${emAndamento ? "Partida em andamento — você entra na próxima rodada" : "Aguardando o anfitrião começar"}</span>`}
         <button class="btn" data-mp="ajustes">Ajustes</button>
         <button class="btn" data-mp="controles">Controles</button>
@@ -762,7 +860,7 @@
     else if (a.startsWith("time-")) enviar({ t: "time", time: a.slice(5) });
     else if (a.startsWith("dif-") && mp.anfitriao) { mp.dificuldade = a.slice(4); mandarLobby(); }
     else if (a.startsWith("rod-") && mp.anfitriao) { mp.rodadasTotal = +a.slice(4) || 5; mandarLobby(); }
-    else if (a === "comecar") { if (!CARGA.feito) return; mp.resultado = null; mp.placar = { p: 0, t: 0 }; mp.rodada = 0; novaRodada(); }
+    else if (a === "comecar") { if (!todosProntos()) return; mp.resultado = null; mp.placar = { p: 0, t: 0 }; mp.rodada = 0; novaRodada(); }
     else if (a === "nome") { await pedirPerfil(true); location.reload(); }
     else if (a === "voltar") menuDaPartida(false);
     else if (a === "telacheia") {                          // sai da tela cheia só enquanto o menu está aberto (para trocar de aba, recarregar...)
@@ -844,7 +942,7 @@
 
   /* ------------------------------------------------------------------ rodadas */
   function novoJogador(id, nome) {
-    const j = { id, nome, time: null, vivo: false, naRodada: false, pos: new V3(0, -50, 0), cur: new V3(0, -50, 0), yaw: 0, pitch: 0, agachado: false, boneco: null, alvo: null };
+    const j = { id, nome, time: null, vivo: false, naRodada: false, pos: new V3(0, -50, 0), cur: new V3(0, -50, 0), yaw: 0, pitch: 0, agachado: false, boneco: null, alvo: null, pronto: false, entrouEm: performance.now() };
     const n = t => [...mp.jogadores.values()].filter(x => x.time === t && !x.bot).length;      // os bots se ajustam depois
     j.time = n("p") <= n("t") ? "p" : "t";          // entra no time com menos gente
     if (id !== mp.meuId) j.alvo = criarAlvo(j);
@@ -936,12 +1034,12 @@
     }
   }
   // todos
-  function comecarRodadaLocal(m) {
+  function comecarRodadaLocal(m, ensaio) {
     mp.fase = "preparo"; mp.preparoT = CFG.tempoPreparo; mp.rodada = m.n; mp.placar = m.placar; mp.dificuldade = m.dificuldade; mp.tempo = dif().tempo;
     mp.pegando = -1; mp.pegarT = 0; mp.passagemT = 0; mp.ultimoDano = null; mp.resultado = null; mp.assinatura = "";
     mp.resgateSuper = null;
     mp.resgateVisto = null; discoResgate.visible = false; painel.visible = false;
-    mp.menuAberto = false; mp.semTelaCheia = false; fecharOverlay(); esconderMenuSolo(); if (dicasEl) abrirDicas(false);
+    if (!ensaio) { mp.menuAberto = false; mp.semTelaCheia = false; fecharOverlay(); esconderMenuSolo(); if (dicasEl) abrirDicas(false); }
     if (!mp.anfitriao) { try { G.enemies.clear(); } catch {} mp.marionetes.clear(); }
     prepararSala(); aplicarPorta(false);
     zerarRefens(); limparExplosivos(); limparArmas(); porCarro(m.carro);
@@ -960,17 +1058,18 @@
     p.reset(meu ? { pos: new V3(meu[0], meu[1], meu[2]), yaw: meu[3] } : G.level.playerStart);
     p.enabled = false; p.invulnerable = false;
     post.fade = 0; post.saturation = satOriginal; post.flash = 0;
-    G.hud.reset(); G.hud.show(true); G.weapon.setVisible(false);
-    G.input.setGameplay(true); try { G.input.requestLock(); } catch {}
+    G.hud.reset(); if (!ensaio) G.hud.show(true); G.weapon.setVisible(false);
+    if (!ensaio) { G.input.setGameplay(true); try { G.input.requestLock(); } catch {} }
     try { G.audio.resume(); G.audio.setPaused(false); G.audio.setIntensity(0.6); } catch {}
     G.events.emit("game:state", { state: "playing", prev: "title" });
     if (rotuloHud) rotuloHud.textContent = "Reféns";
     cenario.visible = true; explosivos.visible = true; armasGrupo.visible = true;
-    G.hud.warn("Rodada " + m.n, CFG.tempoPreparo);
+    if (!ensaio) G.hud.warn("Rodada " + m.n, CFG.tempoPreparo);
     const t = eu() && TIMES[eu().time];
-    if (t && meu) G.hud.radio("Você está com os " + t.nome + ". " + t.objetivo + ".", CFG.tempoPreparo + 1);
+    if (ensaio) { /* nada na tela */ }
+    else if (t && meu) G.hud.radio("Você está com os " + t.nome + ". " + t.objetivo + ".", CFG.tempoPreparo + 1);
     else G.hud.message("Você entra na próxima rodada", 6);
-    if (meu) G.hud.message((meu[1] > 1 ? "Armas no cabide sob a janela" : "Pegue uma arma no chão") + " · 1 arma · 2 pistola · 3 faca · 4 granada · G solta · C corre · Esc abre o menu", CFG.tempoPreparo + 6);
+    if (meu && !ensaio) G.hud.message((meu[1] > 1 ? "Armas no cabide sob a janela" : "Pegue uma arma no chão") + " · 1 arma · 2 pistola · 3 faca · 4 granada · G solta · C corre · Esc abre o menu", CFG.tempoPreparo + 6);
     gradesVazadas(true); G.player.tuning.sprint = G.player.tuning.walk * 2;      // correr = o dobro de andar
     mp.quedaTopo = meu ? meu[1] : 0; mp.naEscada = null; mp.deitarManual = false;
     if (!meu) p.alive = false;
@@ -1545,8 +1644,20 @@
     b.corpo.position.z += ((deitado ? 0.8 : 0) - b.corpo.position.z) * k;              // deitado, o corpo fica centrado no lugar da pessoa
     for (const c of b.cordas) c.visible = o.vivo && o.pose === "preso";
   }
+  // Quem está fora da tela (atrás de mim, do lado) não é desenhado; a menos de 12 m fica sempre, por causa da sombra.
+  const VISTA = { f: null, m: null, e: null };
+  function prepararVista() {
+    const T = G.THREE, c = G.camera;
+    if (!VISTA.f) { VISTA.f = new T.Frustum(); VISTA.m = new T.Matrix4(); VISTA.e = new T.Sphere(new V3(), 3.5); }
+    c.updateMatrixWorld(); VISTA.m.multiplyMatrices(c.projectionMatrix, c.matrixWorldInverse); VISTA.f.setFromProjectionMatrix(VISTA.m);
+  }
+  function naVista(p) {
+    VISTA.e.center.set(p.x, p.y + 0.9, p.z);
+    return VISTA.e.center.distanceToSquared(G.camera.position) < 144 || VISTA.f.intersectsSphere(VISTA.e);
+  }
   function atualizarBonecos(dt) {
     const meuTime = eu() && eu().time, k = 1 - Math.exp(-18 * dt);
+    prepararVista();
     const vejoDuto = noDuto(G.camera.position) || noDuto(G.player.pos);      // só quem também está no duto vê quem está lá dentro
     for (const j of mp.jogadores.values()) {
       if (j.id === mp.meuId) continue;
@@ -1559,7 +1670,7 @@
         j.quedaV += 20 * dt; j.quedaY = Math.max(piso, j.quedaY - j.quedaV * dt); j.cur.y = j.quedaY;
       } else j.quedaY = null;
       const b = j.boneco, a = ARMAS[j.arma], v = VARIANTES[j.arma];
-      b.grupo.visible = j.pos.y > -40 && !(noDuto(j.cur) && !vejoDuto);      // quem está dentro do duto não aparece para quem está fora
+      b.grupo.visible = j.pos.y > -40 && !(noDuto(j.cur) && !vejoDuto) && naVista(j.cur);      // quem está dentro do duto não aparece para quem está fora
       { const perto = j.cur.distanceToSquared(G.player.pos) < 625;      // sombra só de quem está a menos de 25 m
         if (b.sombra !== perto) { b.sombra = perto; b.grupo.traverse(o => { if (o.isMesh) o.castShadow = perto; }); } }
       armarBoneco(b, j.vivo ? j.arma : null);
@@ -1583,7 +1694,7 @@
       r.miraT = (r.miraT || 0) - dt;
       if (r.estado === 1 && r.miraT <= 0 && dx * dx + dz * dz > lim * lim) r.yaw = Math.atan2(-dx, -dz);   // só vira quando anda de verdade
       const festa = r.estado === 2 && r.salvoEm && performance.now() - r.salvoEm < 4500;      // salvo: comemora uns segundos antes de sumir
-      r.boneco.grupo.visible = (r.estado !== 2 || !!festa) && !(noDuto(r.cur) && !vejoDuto);
+      r.boneco.grupo.visible = (r.estado !== 2 || !!festa) && !(noDuto(r.cur) && !vejoDuto) && naVista(r.cur);
       posar(r.boneco, r.cur, r.yaw || 0, k, dt, { vivo: r.estado !== 3, agachado: r.estado === 1 && r.post === 1, noAr: r.estado === 1 && Math.abs(r.cur.y - antes.y) > 1.3 * dt && !escadaEm(r.cur, 0.9), pitch: 0, desdeTiro: (performance.now() - (r.tiroVisto || -1e6)) / 1000, pose: festa ? "festa" : r.estado === 1 ? "pistola" : "preso", sentado: r.estado === 0 && !!r.civil.senta && !r.boneco.modelo, ajoelhado: r.estado === 0, deitado: noDuto(r.cur) || (r.estado === 1 && r.post === 2) });
       r.boneco.arma.visible = r.estado === 1;                 // solto pelo policial, já armado
       r.boneco.colete.visible = !!(r.prot & 1) && r.estado !== 3; r.boneco.capacete.visible = !!(r.prot & 2) && r.estado !== 3;
@@ -2387,6 +2498,40 @@
   // DESEMPENHO: o cenário feito aqui é montado de centenas de caixinhas. Desenhar cada uma em separado pesa muito (eram mais de
   // 1.800 peças, contra 125 do mapa original). Esta função junta todas as peças de um grupo que usam o mesmo material numa
   // malha só; o desenho fica igual e o número de peças cai para o número de materiais.
+  // ASSAR: junta todas as peças de um objeto pequeno (arma, colete, capacete, granada, bomba) numa malha só, com a cor de cada
+  // material gravada nos vértices. Um material único serve para todos, então a placa de vídeo desenha cada objeto de uma vez.
+  let matAssado = null;
+  function materialAssado() {
+    if (!matAssado) matAssado = new G.THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.3 });
+    return matAssado;
+  }
+  function assar(obj, fora) {
+    const T = G.THREE, lista = [], v = new V3(), nm = new T.Matrix3(), cor = new T.Color();
+    obj.updateMatrixWorld(true);
+    let n = 0;
+    obj.traverse(o => {
+      if (!o.isMesh || o === fora || !o.visible || !o.geometry || !o.geometry.attributes.position || Array.isArray(o.material)) return;
+      const ge = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
+      if (!ge.attributes.normal) ge.computeVertexNormals();
+      lista.push([o, ge]); n += ge.attributes.position.count;
+    });
+    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3);
+    let k = 0;
+    for (const [o, ge] of lista) {
+      const Pn = ge.attributes.position, N = ge.attributes.normal, C = ge.attributes.color, m = o.material;
+      nm.getNormalMatrix(o.matrixWorld);
+      cor.copy(m.emissive && m.emissive.getHex() && m.emissiveIntensity > 0.5 ? m.emissive : m.color || cor.set(0xffffff));
+      for (let i = 0; i < Pn.count; i++, k++) {
+        v.fromBufferAttribute(Pn, i).applyMatrix4(o.matrixWorld); pos[k * 3] = v.x; pos[k * 3 + 1] = v.y; pos[k * 3 + 2] = v.z;
+        v.fromBufferAttribute(N, i).applyMatrix3(nm).normalize(); nor[k * 3] = v.x; nor[k * 3 + 1] = v.y; nor[k * 3 + 2] = v.z;
+        col[k * 3] = cor.r * (C ? C.getX(i) : 1); col[k * 3 + 1] = cor.g * (C ? C.getY(i) : 1); col[k * 3 + 2] = cor.b * (C ? C.getZ(i) : 1);
+      }
+    }
+    const geo = new T.BufferGeometry();
+    geo.setAttribute("position", new T.BufferAttribute(pos, 3)); geo.setAttribute("normal", new T.BufferAttribute(nor, 3)); geo.setAttribute("color", new T.BufferAttribute(col, 3));
+    geo.computeBoundingBox(); geo.computeBoundingSphere();
+    return geo;
+  }
   function fundir(g) {
     const T = G.THREE, porMat = new Map();
     for (const o of [...g.children]) {
@@ -3222,7 +3367,23 @@
   let explosivos = null, bolsaEl = null;
   // modelos: granada verde-oliva com alavanca e argola; bomba = banana de dinamite com detonador;
   // bomba-relógio = maleta com mostrador. "led" pisca nas bombas armadas.
+  const moldesExplosivo = new Map();
   function modeloExplosivo(tipo, escala) {
+    let molde = moldesExplosivo.get(tipo);
+    if (!molde) {
+      const bruto = pecasDoExplosivo(tipo), led = bruto.userData.led || null;
+      molde = { geo: assar(bruto, led), led };
+      bruto.traverse(o => { if (o.isMesh && o !== led) { o.geometry.dispose(); o.material.dispose(); } });
+      moldesExplosivo.set(tipo, molde);
+    }
+    const T = G.THREE, g = new T.Group(), m = new T.Mesh(molde.geo, materialAssado());
+    m.userData.emprestado = true; g.add(m);
+    if (molde.led) { const l = new T.Mesh(molde.led.geometry, molde.led.material.clone()); l.position.copy(molde.led.position); l.userData.led = true; g.add(l); g.userData.led = l; }
+    g.scale.setScalar(escala);
+    explosivos.add(g);
+    return g;
+  }
+  function pecasDoExplosivo(tipo) {
     const T = G.THREE, g = new T.Group();
     const mat = (hex, rug = 0.7, met = 0.1) => new T.MeshStandardMaterial({ color: hex, roughness: rug, metalness: met });
     const add = (geo, m, x, y, z) => { const o = new T.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; g.add(o); return o; };
@@ -3271,8 +3432,6 @@
         led.position.set(0.07, 0.042, 0);
       }
     }
-    g.scale.setScalar(escala);
-    explosivos.add(g);
     return g;
   }
   // item para pegar: flutua e gira sobre um aro fino e claro no chão (sem cor de time)
@@ -3284,7 +3443,7 @@
   function limparExplosivos() {
     while (explosivos.children.length) {
       const m = explosivos.children[0]; explosivos.remove(m);
-      m.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+      m.traverse(o => { if (!o.isMesh) return; if (o.userData.led) o.material.dispose(); else if (!o.userData.emprestado) { o.geometry.dispose(); o.material.dispose(); } });
     }
     mp.itens.clear(); mp.bombas.clear(); mp.granadas.length = 0;
     mp.bolsa = { granada: 0, bomba: 0, relogio: 0 }; mp.desarmarT = 0; mp.colete = false; mp.capacete = false; mp.reservaColete = 0; mp.reservaCapacete = 0; mp.superUsado = false;
@@ -3358,6 +3517,7 @@
       if (b.bipe <= 0) { b.bipe = b.t < 6 ? 0.25 : 1; tocar("telegraph", { pos: b.pos, gain: 0.6 }); }
     }
     for (const it of mp.itens.values()) {
+      it.malha.visible = (it.pos.x - p.pos.x) ** 2 + (it.pos.z - p.pos.z) ** 2 < 900;      // a mais de 30 m fica só o aro
       it.malha.rotation.y = tempo * 1.5; it.malha.position.y = 0.45 + Math.sin(tempo * 2 + it.id) * 0.05;
       if ((it.tipo === "colete" || it.tipo === "capacete") && mp[it.tipo]) continue;      // já está usando um: passa por cima sem pegar
       if (j && p.alive && mp.fase === "valendo" && !it.pedido && Math.hypot(it.pos.x - p.pos.x, it.pos.z - p.pos.z) < 1.3 && p.pos.y < 2) {
@@ -3657,7 +3817,15 @@
     if (!c) { c = m.clone(); if (c.color) c.color.lerp(new G.THREE.Color(0x9aa0a6), 0.2); materiaisMundo.set(m, c); }
     return c;
   }
+  const armasAssadas = new Map();
   function copiaDaArma(chave) {
+    let geo = armasAssadas.get(chave);
+    if (!geo) { const bruto = pecasDaCopia(chave); geo = assar(bruto); armasAssadas.set(chave, geo); }
+    const T = G.THREE, g = new T.Group(), m = new T.Mesh(geo, materialAssado());
+    m.userData.emprestado = true; m.castShadow = false; g.add(m);
+    return g;
+  }
+  function pecasDaCopia(chave) {
     const T = G.THREE, g = new T.Group(), raiz = G.weapon.root, v = VARIANTES[chave] || VARIANTES.p_fuzil;
     const noMundo = o => { o.traverse(x => { x.layers.set(0); x.frustumCulled = true; x.castShadow = false; x.visible = true; x.userData.emprestado = true; if (x.isMesh) x.material = materialMundo(x.material); }); return o; };
     if (ARMAS[chave] && ARMAS[chave].faca) { const f = noMundo(facaModelo.clone(true)); f.position.set(0, 0, 0); f.rotation.set(0, Math.PI / 2, 0); g.add(f); return g; }
@@ -3820,18 +3988,18 @@
       if (pertoDaPorta()) { G.hud.setPrompt(null); portas(dt); }       // colado na porta, ela tem prioridade sobre o refém
       else if (!interagir(dt)) portas(dt);
       animarPorta(dt); explosivosLocais(dt);
-      if (mp.anfitriao) logicaDoAnfitriao(dt); else moverMarionetes(dt);
+      if (mp.anfitriao && !CARGA.ensaio) logicaDoAnfitriao(dt); else moverMarionetes(dt);
       atualizarBonecos(dt); atualizarObjetivo();
       mp.envioT -= dt;
-      if (mp.envioT <= 0) {
+      if (mp.envioT <= 0 && !CARGA.ensaio) {
         mp.envioT = 1 / 30;      // 30 atualizações por segundo entre os jogadores
-        if (j) enviar({ t: "estado", p: arr(p.pos), y: +p.yaw.toFixed(3), x: +p.pitch.toFixed(3), c: mp.deitarManual ? 2 : p.crouching ? 1 : 0, v: j.vivo ? 1 : 0, a: (mp.colete ? 1 : 0) | (mp.capacete ? 2 : 0), w: mp.arma || "", s: mp.mirando ? 1 : undefined,
+        if (j) mandarEstado({ t: "estado", p: arr(p.pos), y: +p.yaw.toFixed(3), x: +p.pitch.toFixed(3), c: mp.deitarManual ? 2 : p.crouching ? 1 : 0, v: j.vivo ? 1 : 0, a: (mp.colete ? 1 : 0) | (mp.capacete ? 2 : 0), w: mp.arma || "", s: mp.mirando ? 1 : undefined,
           k: mp.carro.oc[0] === mp.meuId && mp.carro.pos ? [+mp.carro.pos.x.toFixed(2), +mp.carro.pos.z.toFixed(2), +mp.carro.yaw.toFixed(3)] : undefined });
-        if (mp.anfitriao) paraTodos({ t: "estados", tempo: +mp.tempo.toFixed(1),
+        if (mp.anfitriao) mandarEstados({ t: "estados", tempo: +mp.tempo.toFixed(1),
           j: [...mp.jogadores.values()].map(x => [x.id, ...arr(x.pos), +x.yaw.toFixed(3), +x.pitch.toFixed(3), x.noChao ? 2 : x.agachado ? 1 : 0, x.vivo ? 1 : 0, x.armadura | 0, x.id === mp.meuId ? mp.arma || "" : x.arma || ""]),
           r: mp.refens.map(r => [...arr(r.pos), r.estado, r.lider, r.prot | 0, r.estado === 1 ? r.post | 0 : 0]),
           k: mp.carro.pos ? [+mp.carro.pos.x.toFixed(2), +mp.carro.pos.z.toFixed(2), +mp.carro.yaw.toFixed(3)] : null,
-          m: G.enemies.list.filter(e => e.alive).map(e => [e.id, e.type === "hound" ? 1 : 0, ...arr(e.pos), +(e.yaw || 0).toFixed(2)]) }, mp.meuId);
+          m: G.enemies.list.filter(e => e.alive).map(e => [e.id, e.type === "hound" ? 1 : 0, ...arr(e.pos), +(e.yaw || 0).toFixed(2)]) });
       }
       mp.placarT -= dt;
       if (mp.placarT <= 0) { mp.placarT = 0.25; desenharPlacar(); if (!tabEl.hidden) desenharTab(); }
