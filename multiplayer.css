@@ -124,3 +124,7 @@
 .mp-baixa.minha { border-right-color: var(--signal); background: rgba(40, 26, 8, .88); }
 .mp-baixa.some { opacity: 0; }
 @media (max-height: 560px) { .mp-baixas { top: calc(250px + env(safe-area-inset-top, 0px)); } .mp-baixa { font-size: 15px; } }
+
+/* menu do Esc e sala de espera: os botões podem quebrar de linha */
+.mp-acoes-menu { flex-wrap: wrap; margin-top: 12px; }
+.mp-acoes { flex-wrap: wrap; }

@@ -661,15 +661,16 @@
         ${mp.anfitriao ? `<button class="btn primary" data-mp="comecar">Começar partida</button>`
           : `<span class="mp-espera">${emAndamento ? "Partida em andamento — você entra na próxima rodada" : "Aguardando o anfitrião começar"}</span>`}
         <button class="btn" data-mp="ajustes">Ajustes</button>
+        <button class="btn" data-mp="controles">Controles</button>
         <button class="btn" data-mp="nome">Trocar apelido</button>
         <button class="btn" data-mp="sair">Sair da sala</button>
       </div>`);
   }
   // abre o painel de ajustes do próprio jogo (qualidade, sensibilidade, volume, campo de visão) por cima da sala ou do menu da partida
-  function abrirAjustes() {
+  function abrirAjustes(qual) {
     try {
       const m = solo.menus; m.show("title");
-      const b = m.root.querySelector('[data-act="settings"]'); if (b) b.click();
+      const b = m.root.querySelector('[data-act="' + (qual || "settings") + '"]'); if (b) b.click();
       for (let el = m.root.querySelector('[data-act="close-panel"]'); el && el !== m.root; el = el.parentElement) if (getComputedStyle(el).position !== "static") el.style.zIndex = "90";
       const t = setInterval(() => { if (!m.panelOpen) { clearInterval(t); try { m.show("none"); m.locationCard(false); } catch {} } }, 250);
     } catch (e) { console.warn("[mp] ajustes", e); }
@@ -691,7 +692,8 @@
     else if (a === "comecar") { mp.resultado = null; mp.placar = { p: 0, t: 0 }; mp.rodada = 0; novaRodada(); }
     else if (a === "nome") { await pedirPerfil(true); location.reload(); }
     else if (a === "voltar") menuDaPartida(false);
-    else if (a === "ajustes") abrirAjustes();
+    else if (a === "ajustes") abrirAjustes("settings");
+    else if (a === "controles") abrirAjustes("controls");
     else if (a === "lobby") {
       mp.menuAberto = false;
       if (mp.anfitriao) {                                  // o anfitrião encerra a partida para todos, com o placar como está
@@ -720,13 +722,16 @@
     overlay(`<div class="mp-k">Partida em andamento</div>
       <h2 class="mp-h">Menu</h2>
       <p class="mp-nota">A partida continua rodando para os outros jogadores enquanto este menu está aberto.</p>
-      <div class="mp-acoes">
+      <div class="mp-acoes mp-acoes-menu">
         <button class="btn primary" data-mp="voltar">Voltar ao jogo</button>
-        <button class="btn" data-mp="ajustes">Ajustes</button>
-        <button class="btn" data-mp="lobby">${mp.anfitriao ? "Encerrar a partida" : "Ir para a sala de espera"}</button>
+        <button class="btn" data-mp="lobby">Voltar ao lobby</button>
         <button class="btn" data-mp="sair">Sair da sala</button>
       </div>
-      <p class="mp-nota">${mp.anfitriao ? "Encerrar a partida leva todos de volta à sala de espera." : "Na sala de espera você fica fora desta rodada e volta a jogar na próxima."}</p>`);
+      <div class="mp-acoes mp-acoes-menu">
+        <button class="btn" data-mp="ajustes">Ajustes</button>
+        <button class="btn" data-mp="controles">Controles</button>
+      </div>
+      <p class="mp-nota">${mp.anfitriao ? "Voltar ao lobby encerra a partida e leva todos para a sala de espera." : "No lobby você fica fora desta rodada e volta a jogar na próxima."} Sair da sala leva à tela inicial, de onde dá para criar outra sala.</p>`);
   }
   window.addEventListener("keydown", ev => {
     if (ev.code !== "Escape" || ev.repeat || !emRodada() || (tela && !tela.hidden) || (pichoEl && !pichoEl.hidden) || (dicasEl && dicasEl.classList.contains("aberta"))) return;
@@ -865,7 +870,7 @@
     const t = eu() && TIMES[eu().time];
     if (t && meu) G.hud.radio("Você está com os " + t.nome + ". " + t.objetivo + ".", CFG.tempoPreparo + 1);
     else G.hud.message("Você entra na próxima rodada", 6);
-    if (meu) G.hud.message((meu[1] > 1 ? "Armas no cabide sob a janela" : "Pegue uma arma no chão") + " · 1 arma · 2 pistola · 3 faca · 4 granada · G solta · C corre", CFG.tempoPreparo + 6);
+    if (meu) G.hud.message((meu[1] > 1 ? "Armas no cabide sob a janela" : "Pegue uma arma no chão") + " · 1 arma · 2 pistola · 3 faca · 4 granada · G solta · C corre · Esc abre o menu", CFG.tempoPreparo + 6);
     gradesVazadas(true); G.player.tuning.sprint = G.player.tuning.walk * 2;      // correr = o dobro de andar
     mp.quedaTopo = meu ? meu[1] : 0; mp.naEscada = null; mp.deitarManual = false;
     if (!meu) p.alive = false;
