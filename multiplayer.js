@@ -322,6 +322,9 @@
       case "armaSolta":
         if (ARMAS[m.arma] && Array.isArray(m.p)) paraTodos({ t: "armaChao", d: [mp.proxId++, m.arma, +m.p[0], +m.p[1], +m.p[2] || 0], por: id });
         break;
+      case "super":
+        if (mp.resgate) paraUm(id, { t: "resgateSuper", p: [+mp.resgate.x.toFixed(1), +mp.resgate.z.toFixed(1)] });
+        break;
       case "pichar":
         if (j.vivo && Array.isArray(m.p) && Array.isArray(m.n)) paraTodos({ t: "pichacao", p: m.p, n: m.n, time: j.time, d: m.d | 0, g: +m.g || 0 });
         break;
@@ -423,6 +426,7 @@
         sincronizarMarionetes(m.m);
         if (m.k && mp.carro.oc[0] !== mp.meuId) { mp.carro.alvo = new V3(m.k[0], 0, m.k[1]); mp.carro.alvoYaw = m.k[2]; }
         break;
+      case "resgateSuper": mp.resgateSuper = new V3(m.p[0], 0, m.p[1]); break;
       case "carro": mp.carro.oc = m.oc; break;
       case "tiro": tiroRemoto(m); break;
       case "resgate":
@@ -868,6 +872,7 @@
   function comecarRodadaLocal(m) {
     mp.fase = "preparo"; mp.preparoT = CFG.tempoPreparo; mp.rodada = m.n; mp.placar = m.placar; mp.dificuldade = m.dificuldade; mp.tempo = dif().tempo;
     mp.pegando = -1; mp.pegarT = 0; mp.passagemT = 0; mp.ultimoDano = null; mp.resultado = null; mp.assinatura = "";
+    mp.resgateSuper = null;
     mp.resgateVisto = null; discoResgate.visible = false; painel.visible = false;
     mp.menuAberto = false; fecharOverlay(); esconderMenuSolo(); if (dicasEl) abrirDicas(false);
     if (!mp.anfitriao) { try { G.enemies.clear(); } catch {} mp.marionetes.clear(); }
@@ -2643,6 +2648,7 @@
   window.addEventListener("keydown", ev => {
     if ((ev.code !== "Digit0" && ev.code !== "Numpad0") || ev.repeat || !emRodada() || mp.fase !== "valendo" || !G.player.alive || !mp.arma || mp.superUsado || (tela && !tela.hidden)) return;
     const p = G.player;
+    enviar({ t: "super" });                              // pede ao anfitrião onde é o ponto de resgate (para o mapa)
     mp.superUsado = true; p.maxHealth = 500; p.health = 500;      // vida 500, dez coletes e dez capacetes (um em uso, nove de reserva),
     mp.colete = true; mp.capacete = true; mp.reservaColete = 9; mp.reservaCapacete = 9;      // mira ajudada em dobro e 50% a mais de dano por tiro (ver miraAjudada e umTiro)
     G.hud.message("Super poder ativado", 3);
@@ -2681,6 +2687,13 @@
   function meioDoCorpo(j) {
     const eu_ = j.id === mp.meuId, deitado = eu_ ? mp.deitado : j.noChao || noDuto(j.pos), agachado = eu_ ? G.player.crouching : j.agachado;
     return deitado ? 0.3 : agachado ? 0.75 : 1.2;
+  }
+  // caminho para um bot: primeiro o mapa de caminhos do jogo; se ele não achar (bot encostado numa parede, destino fora do
+  // alcance), usa a grade própria, que parte da célula livre mais próxima e sempre acha uma saída
+  function caminhoBot(a, b) {
+    let c = null; try { c = G.physics.nav.findPath(a, b); } catch {}
+    if (!c || !c.length) { try { c = caminhoExtra(a, b); } catch { c = null; } }
+    return c && c.length ? c : null;
   }
   function moverBots(dt) {
     const cfg = BOTS.niveis[mp.dificuldade] || BOTS.niveis.medio, agora = performance.now() / 1000;
@@ -2730,10 +2743,17 @@
           ia.velAlvo = ia.ultAlvo === ia.alvo.id && ia.ultPos ? Math.hypot(p.x - ia.ultPos.x, p.z - ia.ultPos.z) / Math.max(0.05, ia.pensarT) : 0;      // o alvo está parado, andando ou correndo?
           ia.ultAlvo = ia.alvo.id; ia.ultPos = p.clone(); ia.ar = Math.abs(p.y - (ia.ultY ?? p.y)) > 0.25; ia.ultY = p.y;
           if (ia.visto && ia.dist < 9) ia.caminho = null;                    // perto e à vista: para de avançar e luta
-          else if ((ia.caminhoT -= ia.pensarT) <= 0 || !ia.caminho || !ia.caminho.length) { ia.caminhoT = 1.2; try { ia.caminho = G.physics.nav.findPath(b.pos, new V3(p.x, 0, p.z)); } catch { ia.caminho = null; } }
+          else if ((ia.caminhoT -= ia.pensarT) <= 0 || !ia.caminho || !ia.caminho.length) { ia.caminhoT = 1.2; ia.caminho = caminhoBot(b.pos, new V3(p.x, 0, p.z)); }
         } else if (!ia.caminho || !ia.caminho.length || (ia.rondaT -= ia.pensarT) <= 0) {      // ninguém percebido: faz a ronda por pontos sorteados do mapa
-          ia.rondaT = 14;
-          try { ia.caminho = G.physics.nav.findPath(b.pos, G.physics.nav.randomPoint(new V3(0, 0, 0), 34)); } catch { ia.caminho = null; }
+          // sem ninguém à vista, o bot vai para onde está o time contrário: cada um escolhe um inimigo e caminha para perto
+          // dele (com alguns metros de erro, para não chegarem todos pelo mesmo lugar). Sem inimigo vivo, ronda pontos sorteados.
+          ia.rondaT = 5 + Math.random() * 3;
+          let presa = ia.presa && mp.jogadores.get(ia.presa); if (!presa || !presa.vivo || presa.time === b.time) presa = null;
+          if (!presa) { const ops = [...mp.jogadores.values()].filter(j => j.vivo && j.time !== b.time && j.pos.y > -40); presa = ops.length ? ops[Math.floor(Math.random() * ops.length)] : null; ia.presa = presa ? presa.id : null; }
+          let destino = null;
+          if (presa) { const q = posDe(presa), a = Math.random() * Math.PI * 2, r = 3 + Math.random() * 6; destino = new V3(q.x + Math.cos(a) * r, 0, q.z + Math.sin(a) * r); }
+          else try { destino = G.physics.nav.randomPoint(new V3(0, 0, 0), 34); } catch {}
+          ia.caminho = destino ? caminhoBot(b.pos, destino) : null;
         }
       }
       let wx = 0, wz = 0;
@@ -2756,6 +2776,13 @@
         let livre = true; try { livre = G.physics.nav.isWalkable(b.pos.x + ia.vagar[0] * 1.2, b.pos.z + ia.vagar[1] * 1.2); } catch {}
         if (livre) { wx = ia.vagar[0] * 0.7; wz = ia.vagar[1] * 0.7; } else ia.vagarT = 0;
       }
+      // não andam grudados: quem está a menos de 2,5 m de um colega se afasta dele
+      for (const o of mp.jogadores.values()) {
+        if (o === b || !o.bot || !o.vivo || o.time !== b.time) continue;
+        const sx = b.pos.x - o.pos.x, sz = b.pos.z - o.pos.z, sd = Math.hypot(sx, sz);
+        if (sd < 2.5 && sd > 0.01 && Math.abs(b.pos.y - o.pos.y) < 1.5) { const f = (1 - sd / 2.5) * 0.9; wx += sx / sd * f; wz += sz / sd * f; }
+      }
+      { const wl = Math.hypot(wx, wz); if (wl > 1) { wx /= wl; wz /= wl; } }
       // travou em alguma coisa? pula o obstáculo se der; senão dá um pulinho, e se continuar preso desvia e refaz o caminho
       ia.medeT = (ia.medeT || 0) - dt;
       if (ia.medeT <= 0) {
@@ -2767,7 +2794,12 @@
           const n = Math.hypot(wx, wz), topo = degrauNaFrente(b.pos, wx / n, wz / n, b.pos.y);
           if (topo != null) b.vel.y = Math.sqrt(40 * (topo - b.pos.y + 0.35));
           else if (ia.preso === 1) b.vel.y = 6.3;
-          if (ia.preso >= 2 || topo == null) { const a = Math.random() * Math.PI * 2; ia.desvio = [Math.cos(a), Math.sin(a)]; ia.desvioT = 0.5 + Math.random() * 0.6; ia.caminho = null; ia.caminhoT = 0; ia.rondaT = 0; }
+          if (ia.preso >= 2 || topo == null) {            // preso numa parede: procura uma saída por perto e refaz o caminho a partir dela
+            let saida = null;
+            for (let k = 0; k < 12 && !saida; k++) { const a = Math.random() * Math.PI * 2, r = 1.5 + Math.random() * 3, x = b.pos.x + Math.cos(a) * r, z = b.pos.z + Math.sin(a) * r; let livre = false; try { livre = livreExtra(x, z) && G.physics.lineOfSight(new V3(b.pos.x, b.pos.y + 1, b.pos.z), new V3(x, b.pos.y + 1, z)); } catch {} if (livre) saida = [x - b.pos.x, z - b.pos.z]; }
+            const a = Math.random() * Math.PI * 2, d = saida ? Math.hypot(saida[0], saida[1]) : 1;
+            ia.desvio = saida ? [saida[0] / d, saida[1] / d] : [Math.cos(a), Math.sin(a)]; ia.desvioT = saida ? Math.min(1.4, d / 3) : 0.5 + Math.random() * 0.6; ia.caminho = null; ia.caminhoT = 0; ia.rondaT = 0;
+          }
           if (topo != null) b.pisando = false;
         } else if (andou > 0.6) ia.preso = 0;
       }
@@ -3617,8 +3649,9 @@
     if (!mapaFundo || mapaFundo.rodada !== mp.rodada) { mapaFundo = fundoDoMapa(); mapaFundo.rodada = mp.rodada; mapaEl.width = mapaFundo.width; mapaEl.height = mapaFundo.height; }
     const c = mapaEl.getContext("2d"), esc = MAPA.larg / (MAPA.x1 - MAPA.x0), X = x => (x - MAPA.x0) * esc, Z = z => (z - MAPA.z0) * esc;
     c.clearRect(0, 0, mapaEl.width, mapaEl.height); c.drawImage(mapaFundo, 0, 0);
-    if (j.time === "p" && mp.resgateVisto) {              // onde deixar os reféns: círculo cheio, piscando, com o nome
-      const r = mp.resgateVisto, pulso = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+    const ondeResgate = j.time === "p" ? mp.resgateVisto : mp.superUsado ? mp.resgateSuper : null;
+    if (ondeResgate) {              // onde deixar os reféns: círculo cheio, piscando, com o nome
+      const r = ondeResgate, pulso = 0.5 + 0.5 * Math.sin(performance.now() / 260);
       c.fillStyle = "rgba(255,210,122," + (0.25 + 0.3 * pulso).toFixed(2) + ")"; c.strokeStyle = "#ffd27a"; c.lineWidth = 2;
       c.beginPath(); c.arc(X(r.x), Z(r.z), Math.max(6, RAIO_RESGATE * esc), 0, 6.3); c.fill(); c.stroke();
       c.fillStyle = "#ffd27a"; c.font = "700 9px sans-serif"; c.textAlign = "center"; c.fillText("RESGATE", Math.max(24, Math.min(mapaEl.width - 24, X(r.x))), Z(r.z) + (Z(r.z) > mapaEl.height - 22 ? -12 : 20));
@@ -3630,6 +3663,11 @@
       const x = X(o.cur.x), z = Z(o.cur.z); if (o.cur.y < -40) continue;
       c.fillStyle = o.vivo ? TIMES[j.time].css : "rgba(232,228,218,.35)"; c.beginPath(); c.arc(x, z, 3.2, 0, 6.3); c.fill();
       if (o.vivo && !o.bot) { c.fillStyle = "#e8e4da"; c.fillText(String(o.nome).slice(0, 8), x, z - 6); }
+    }
+    if (mp.superUsado) {                                  // super poder: inimigos (vermelho) e máquinas (cinza) aparecem no mapa
+      for (const o of mp.jogadores.values()) if (o.vivo && o.time !== j.time && o.cur.y > -40) { c.fillStyle = "#ff3b30"; c.beginPath(); c.arc(X(o.cur.x), Z(o.cur.z), 3.4, 0, 6.3); c.fill(); c.strokeStyle = "#fff"; c.lineWidth = 1; c.stroke(); }
+      for (const e of G.enemies.list) if (e.alive) { c.fillStyle = "rgba(232,228,218,.8)"; c.fillRect(X(e.pos.x) - 1.5, Z(e.pos.z) - 1.5, 3, 3); }
+      if (j.time !== "p") for (const r of mp.refens) if (r.estado < 2) { c.fillStyle = "#f08a00"; c.fillRect(X(r.cur.x) - 2.5, Z(r.cur.z) - 2.5, 5, 5); }
     }
     const p = G.player, yaw = p.yaw;                    // você: seta apontando para onde olha
     c.save(); c.translate(X(p.pos.x), Z(p.pos.z)); c.rotate(-yaw); c.fillStyle = "#ffffff"; c.strokeStyle = "#0b0d0f"; c.lineWidth = 1;
